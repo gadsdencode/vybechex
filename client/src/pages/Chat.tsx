@@ -39,7 +39,7 @@ export default function Chat() {
   };
 
   const loadSuggestions = async () => {
-    const { suggestions } = await getSuggestions("");
+    const { suggestions } = await getSuggestions(matchId);
     setSuggestions(suggestions);
   };
 

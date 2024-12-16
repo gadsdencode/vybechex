@@ -196,15 +196,47 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/suggest", async (req, res) => {
     if (!req.user) return res.status(401).send("Not authenticated");
     
-    const { context } = req.body;
-    // Simulated AI response for now
-    const suggestions = [
-      "Tell me more about your interests!",
-      "What do you like to do for fun?",
-      "Have you traveled anywhere interesting lately?"
-    ];
+    try {
+      const { matchId } = req.body;
+      
+      // Get match's user data
+      const [match] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, matchId))
+        .limit(1);
 
-    res.json({ suggestions });
+      if (!match) {
+        return res.status(404).send("Match not found");
+      }
+
+      // Get recent chat history
+      const recentMessages = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.matchId, matchId))
+        .orderBy(desc(messages.createdAt))
+        .limit(5);
+
+      const suggestions = await generateConversationSuggestions(
+        req.user.personalityTraits || {},
+        match.personalityTraits || {},
+        recentMessages,
+        req.user.id
+      );
+
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Error generating suggestions:", error);
+      res.status(500).json({ 
+        message: "Failed to generate suggestions",
+        suggestions: [
+          "Tell me more about your interests!",
+          "What do you like to do for fun?",
+          "Have you traveled anywhere interesting lately?"
+        ]
+      });
+    }
   });
 
   const httpServer = createServer(app);
