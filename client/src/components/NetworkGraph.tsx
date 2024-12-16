@@ -6,6 +6,13 @@ import { useUser } from "../hooks/use-user";
 import { Card } from "@/components/ui/card";
 import { Loader2 } from "lucide-react";
 
+// Utility function to get computed color values
+function getComputedColor(variable: string, opacity: number = 1): string {
+  const style = getComputedStyle(document.documentElement);
+  const hue = style.getPropertyValue('--primary').trim();
+  return `hsla(${hue}, 65%, 48%, ${opacity})`;
+}
+
 interface GraphData {
   nodes: Array<{
     id: string;
@@ -67,28 +74,29 @@ export function NetworkGraph() {
         graphData={graphData}
         nodeLabel="name"
         nodeColor={(node: NodeObject) => {
-          return node.id === user?.id?.toString()
-            ? "hsl(var(--primary))"
-            : "hsl(var(--primary) / 0.7)";
+          return getComputedColor(
+            '--primary',
+            node.id === user?.id?.toString() ? 1 : 0.7
+          );
         }}
         linkColor={(link: LinkObject) => {
           const value = (link as any).value;
           // Create gradient based on compatibility score
-          // Higher score = more saturated color
-          return `hsla(var(--primary), ${Math.max(0.2, value)})`;
+          return getComputedColor('--primary', Math.max(0.2, value));
         }}
         linkWidth={(link: LinkObject) => {
           const value = (link as any).value;
           // Thicker lines for stronger connections
-          return 1 + value * 4;
+          return 2 + value * 6;
         }}
         nodeCanvasObject={(node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const label = (node as any).name as string;
           const fontSize = ((node as any).val as number) / 2;
           ctx.font = `${fontSize}px Inter`;
-          ctx.fillStyle = node.id === user?.id?.toString()
-            ? "hsl(var(--primary))"
-            : "hsl(var(--primary) / 0.7)";
+          ctx.fillStyle = getComputedColor(
+            '--primary',
+            node.id === user?.id?.toString() ? 1 : 0.7
+          );
           ctx.beginPath();
           ctx.arc(node.x!, node.y!, ((node as any).val as number) / 2, 0, 2 * Math.PI);
           ctx.fill();
