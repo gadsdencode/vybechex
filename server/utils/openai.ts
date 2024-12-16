@@ -1,8 +1,11 @@
-import { CreateChatCompletionRequestMessage } from "openai";
+interface ChatMessage {
+  role: "system" | "user" | "assistant";
+  content: string;
+}
 
 const OPENAI_API_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
-export async function getChatCompletion(messages: CreateChatCompletionRequestMessage[]) {
+export async function getChatCompletion(messages: ChatMessage[]) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set");
   }
@@ -38,22 +41,32 @@ export async function craftMessageFromSuggestion(
   const messages = [
     {
       role: "system",
-      content: `You are a friendly conversation assistant helping users craft natural, engaging messages for a friendship matching platform. 
-      Your task is to create a natural, friendly message based on a conversation topic, considering both users' personality traits.
-      The message should be casual, warm, and authentic - as if it's coming from a real person who wants to make friends.`
+      content: `You are a friendly conversation assistant crafting natural messages for a friendship matching platform.
+      Create a warm, authentic message that sounds like it's coming from a real person who wants to make friends.
+      Consider personality traits to adapt the tone and style of the message:
+      - High extraversion: More enthusiastic, energetic tone
+      - Low extraversion: More thoughtful, measured approach
+      - High communication: More detailed, expressive language
+      - High openness: More creative, curious phrasing
+      - High values: More emphasis on shared interests and beliefs
+      The message should be 2-3 sentences long, friendly but not overly familiar.`
     },
     {
       role: "user",
-      content: `Given these personality traits:
-      Your traits: ${Object.entries(userPersonality)
-        .map(([trait, score]) => `${trait}: ${score * 100}%`)
-        .join(", ")}
-      Match's traits: ${Object.entries(matchPersonality)
-        .map(([trait, score]) => `${trait}: ${score * 100}%`)
-        .join(", ")}
+      content: `Here are the personality traits to consider:
+      
+      My traits:
+      ${Object.entries(userPersonality)
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join("\n")}
+      
+      Their traits:
+      ${Object.entries(matchPersonality)
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join("\n")}
       
       Please craft a natural, friendly message based on this conversation starter: "${suggestion}"
-      The message should be personal, engaging, and true to my personality traits.`
+      Make it feel authentic and aligned with my personality traits while being mindful of their traits.`
     }
   ];
 
