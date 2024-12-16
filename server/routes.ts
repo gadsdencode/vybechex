@@ -5,7 +5,7 @@ import { db } from "@db";
 import { matches, messages, users, groups, groupMembers } from "@db/schema";
 import { and, eq, ne, desc, sql, notInArray } from "drizzle-orm";
 import { crypto } from "./auth.js";
-import { generateConversationSuggestions, craftMessageFromSuggestion } from "./utils/openai";
+import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -398,6 +398,48 @@ export function registerRoutes(app: Express): Server {
         message: "Failed to craft message"
       });
     }
+  // Get event suggestions for a match
+  app.get("/api/event-suggestions/:matchId", async (req, res) => {
+    if (!req.user) return res.status(401).send("Not authenticated");
+    
+    try {
+      const matchId = parseInt(req.params.matchId);
+      
+      // Get the match data to find both users
+      const [match] = await db
+        .select()
+        .from(matches)
+        .where(eq(matches.id, matchId))
+        .limit(1);
+
+      if (!match) {
+        return res.status(404).send("Match not found");
+      }
+
+      // Get both users' data
+      const [otherUserId] = [match.userId1, match.userId2].filter(id => id !== req.user.id);
+      const [otherUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, otherUserId))
+        .limit(1);
+
+      if (!otherUser) {
+        return res.status(404).send("Matched user not found");
+      }
+
+      const suggestions = await generateEventSuggestions(
+        req.user.personalityTraits || {},
+        otherUser.personalityTraits || {}
+      );
+
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Error getting event suggestions:", error);
+      res.status(500).json({ message: "Failed to get event suggestions" });
+    }
+  });
+
   });
 
   // Get potential group matches with compatibility scores

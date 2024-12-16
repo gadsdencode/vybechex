@@ -79,6 +79,100 @@ export async function craftMessageFromSuggestion(
   }
 }
 
+export interface EventSuggestion {
+  title: string;
+  description: string;
+  compatibility: number; // 0-100 score of how well this matches both users
+}
+
+export async function generateEventSuggestions(
+  userPersonality: Record<string, number>,
+  matchPersonality: Record<string, number>
+): Promise<EventSuggestion[]> {
+  const messages: ChatMessage[] = [
+    {
+      role: "system",
+      content: `You are an event planning assistant helping to suggest activities for potential friends to do together.
+      Consider both users' personality traits when making suggestions.
+      Focus on activities that would help build genuine connections.
+      Keep suggestions practical and specific to their traits.
+      Return exactly 3 suggestions, each with a title and detailed description.`
+    },
+    {
+      role: "user",
+      content: `Generate event suggestions for two users with these personality traits:
+
+      User 1 traits:
+      ${Object.entries(userPersonality)
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join("\n")}
+      
+      User 2 traits:
+      ${Object.entries(matchPersonality)
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join("\n")}
+      
+      Suggest 3 activities they might enjoy together based on their compatibility and traits.
+      Consider their extraversion levels, communication styles, and other traits.
+      Format each suggestion with a title and detailed description.`
+    }
+  ];
+
+  try {
+    const completion = await getChatCompletion(messages);
+    
+    // Parse the completion into structured suggestions
+    const suggestions = completion
+      .split(/\d\./)
+      .filter(Boolean)
+      .map(suggestion => {
+        const [title, ...descriptionParts] = suggestion.trim().split('\n');
+        const description = descriptionParts.join('\n').trim();
+        
+        // Calculate compatibility score based on relevant traits
+        const compatibilityFactors = {
+          extraversion: 1 - Math.abs(userPersonality.extraversion - matchPersonality.extraversion),
+          communication: 1 - Math.abs(userPersonality.communication - matchPersonality.communication),
+          openness: 1 - Math.abs(userPersonality.openness - matchPersonality.openness),
+        };
+        
+        const compatibility = Math.round(
+          (Object.values(compatibilityFactors).reduce((sum, score) => sum + score, 0) / 
+          Object.keys(compatibilityFactors).length) * 100
+        );
+
+        return {
+          title: title.replace(/^[-*]\s*/, ''),
+          description: description,
+          compatibility
+        };
+      })
+      .slice(0, 3);
+
+    return suggestions;
+  } catch (error) {
+    console.error("Error generating event suggestions:", error);
+    // Fallback suggestions if OpenAI API fails
+    return [
+      {
+        title: "Coffee and Conversation",
+        description: "Meet at a local café for casual conversation and getting to know each other better.",
+        compatibility: 80
+      },
+      {
+        title: "Local Park Walk",
+        description: "Take a relaxing walk in a nearby park while discussing shared interests.",
+        compatibility: 75
+      },
+      {
+        title: "Board Game Café Visit",
+        description: "Visit a board game café and enjoy some friendly competition while chatting.",
+        compatibility: 70
+      }
+    ];
+  }
+}
+
 export async function generateConversationSuggestions(
   userPersonality: Record<string, number>,
   matchPersonality: Record<string, number>,

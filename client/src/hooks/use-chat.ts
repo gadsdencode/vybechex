@@ -16,6 +16,18 @@ export function useChat() {
     return res.json();
   };
 
+  const getEventSuggestions = async (matchId: number) => {
+    const res = await fetch(`/api/event-suggestions/${matchId}`, {
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to get event suggestions");
+    }
+
+    return res.json();
+  };
+
   const craftMessage = async (matchId: number, suggestion: string) => {
     const res = await fetch("/api/craft-message", {
       method: "POST",
@@ -33,6 +45,7 @@ export function useChat() {
 
   return {
     getSuggestions,
+    getEventSuggestions,
     craftMessage,
   };
 }
