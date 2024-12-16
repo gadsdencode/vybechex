@@ -146,7 +146,15 @@ export default function Chat() {
                       key={i}
                       variant="ghost"
                       className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
-                      onClick={() => setNewMessage(`Would you like to ${event.toLowerCase()}?`)}
+                      onClick={async () => {
+                        try {
+                          const { message } = await craftMessage(matchId, `Would you like to ${event.toLowerCase()}?`);
+                          setNewMessage(message);
+                        } catch (error) {
+                          console.error("Failed to craft message:", error);
+                          setNewMessage(`Would you like to ${event.toLowerCase()}?`); // Fallback
+                        }
+                      }}
                     >
                       {event}
                     </Button>
