@@ -1,8 +1,6 @@
 import { useMatches } from "../hooks/use-matches";
-import { Card, CardHeader, CardContent, CardFooter } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { MessageSquare, Loader2 } from "lucide-react";
-import { Link } from "wouter";
+import { Loader2 } from "lucide-react";
+import { MatchCard } from "../components/MatchCard";
 
 export default function Matches() {
   const { matches, isLoading } = useMatches();
@@ -19,28 +17,17 @@ export default function Matches() {
     <div className="max-w-4xl mx-auto">
       <h1 className="text-3xl font-bold mb-8">Your Matches</h1>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {matches?.map((match) => (
-          <Card key={match.id}>
-            <CardHeader>
-              <h3 className="text-xl font-semibold">{match.name || match.username}</h3>
-            </CardHeader>
-            <CardContent>
-              <p className="text-muted-foreground">
-                {match.bio || "No bio yet"}
-              </p>
-            </CardContent>
-            <CardFooter>
-              <Button asChild>
-                <Link href={`/chat/${match.id}`}>
-                  <MessageSquare className="h-4 w-4 mr-2" />
-                  Chat
-                </Link>
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
+      {matches && matches.length > 0 ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {matches.map((match) => (
+            <MatchCard key={match.id} match={match} />
+          ))}
+        </div>
+      ) : (
+        <div className="text-center text-muted-foreground">
+          <p>No matches found yet. Complete your personality quiz to find compatible friends!</p>
+        </div>
+      )}
     </div>
   );
 }

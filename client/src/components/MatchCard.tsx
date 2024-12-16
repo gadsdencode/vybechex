@@ -16,11 +16,9 @@ export function MatchCard({ match }: MatchCardProps) {
           <UserCircle className="h-10 w-10 text-muted-foreground" />
           <div>
             <h3 className="text-xl font-semibold">{match.name || match.username}</h3>
-            {similarityScore && (
-              <p className="text-sm text-muted-foreground">
-                {similarityScore}% Match
+            <p className="text-sm text-muted-foreground">
+                {match.compatibilityScore}% Match
               </p>
-            )}
           </div>
         </div>
       </CardHeader>

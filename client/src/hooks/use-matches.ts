@@ -2,7 +2,7 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 import type { User, Match, Message } from "@db/schema";
 
 export function useMatches() {
-  const { data: matches, isLoading } = useQuery<User[]>({
+  const { data: matches, isLoading } = useQuery<(User & { compatibilityScore: number })[]>({
     queryKey: ["/api/matches"],
   });
 
