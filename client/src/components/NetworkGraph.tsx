@@ -66,9 +66,22 @@ export function NetworkGraph() {
         ref={graphRef}
         graphData={graphData}
         nodeLabel="name"
-        nodeColor={() => "hsl(var(--primary))"}
-        linkColor={() => "hsl(var(--primary) / 0.3)"}
-        linkWidth={(link: LinkObject) => (link as any).value * 3}
+        nodeColor={(node: NodeObject) => {
+          return node.id === user?.id?.toString()
+            ? "hsl(var(--primary))"
+            : "hsl(var(--primary) / 0.7)";
+        }}
+        linkColor={(link: LinkObject) => {
+          const value = (link as any).value;
+          // Create gradient based on compatibility score
+          // Higher score = more saturated color
+          return `hsl(var(--primary) / ${Math.max(0.2, value)})`;
+        }}
+        linkWidth={(link: LinkObject) => {
+          const value = (link as any).value;
+          // Thicker lines for stronger connections
+          return 1 + value * 4;
+        }}
         nodeCanvasObject={(node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const label = (node as any).name as string;
           const fontSize = ((node as any).val as number) / 2;
