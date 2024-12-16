@@ -18,7 +18,7 @@ export default function Chat() {
   const matchId = parseInt(params?.id || "0");
   const { user } = useUser();
   const { getMessages, sendMessage } = useMatches();
-  const { getSuggestions, craftMessage } = useChat();
+  const { getSuggestions, craftMessage, getEventSuggestions } = useChat();
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
