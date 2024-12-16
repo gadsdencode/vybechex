@@ -36,15 +36,18 @@ export default function Home() {
         </p>
       </div>
 
-      {!user.quizCompleted ? (
+      <div className="flex gap-4 justify-center">
         <Button size="lg" asChild>
-          <Link href="/quiz">Take the Personality Quiz</Link>
+          <Link href="/quiz">
+            {user.quizCompleted ? "Retake Quiz" : "Take the Personality Quiz"}
+          </Link>
         </Button>
-      ) : (
-        <Button size="lg" asChild>
-          <Link href="/matches">Find Matches</Link>
-        </Button>
-      )}
+        {user.quizCompleted && (
+          <Button size="lg" asChild>
+            <Link href="/matches">Find Matches</Link>
+          </Button>
+        )}
+      </div>
     </div>
   );
 }

@@ -75,24 +75,25 @@ export default function Quiz() {
           credentials: "include",
         });
 
-        if (!res.ok) throw new Error("Failed to submit quiz");
+        if (!res.ok) {
+          const error = await res.text();
+          throw new Error(error);
+        }
         
-        const data = await res.json();
+        // Force refresh user data to update quiz completion status
+        await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
         
-        // Invalidate the user query to refresh the quiz completion status
-        queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-
         toast({
           title: "Quiz completed!",
           description: "Great! Now let's find you some compatible friends!",
-          variant: "default"
         });
 
         navigate("/matches");
-      } catch (error) {
+      } catch (error: any) {
+        console.error("Quiz submission error:", error);
         toast({
           title: "Error",
-          description: "Failed to submit quiz. Please try again.",
+          description: error.message || "Failed to submit quiz. Please try again.",
           variant: "destructive",
         });
       }
