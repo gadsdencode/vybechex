@@ -75,7 +75,7 @@ export function NetworkGraph() {
           const value = (link as any).value;
           // Create gradient based on compatibility score
           // Higher score = more saturated color
-          return `hsl(var(--primary) / ${Math.max(0.2, value)})`;
+          return `hsla(var(--primary), ${Math.max(0.2, value)})`;
         }}
         linkWidth={(link: LinkObject) => {
           const value = (link as any).value;
@@ -86,7 +86,9 @@ export function NetworkGraph() {
           const label = (node as any).name as string;
           const fontSize = ((node as any).val as number) / 2;
           ctx.font = `${fontSize}px Inter`;
-          ctx.fillStyle = "hsl(var(--primary))";
+          ctx.fillStyle = node.id === user?.id?.toString()
+            ? "hsl(var(--primary))"
+            : "hsl(var(--primary) / 0.7)";
           ctx.beginPath();
           ctx.arc(node.x!, node.y!, ((node as any).val as number) / 2, 0, 2 * Math.PI);
           ctx.fill();
