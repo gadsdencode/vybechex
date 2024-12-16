@@ -4,7 +4,7 @@ import { setupAuth } from "./auth";
 import { db } from "@db";
 import { matches, messages, users, groups, groupMembers, matchesRelations } from "@db/schema";
 import { and, eq, ne, desc, sql, notInArray } from "drizzle-orm";
-import { crypto } from "./auth"; // Added missing import
+import { setupAuth } from "./auth";
 import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
 
 export function registerRoutes(app: Express): Server {
