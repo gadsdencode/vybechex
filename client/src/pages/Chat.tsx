@@ -96,17 +96,17 @@ export default function Chat() {
               <Lightbulb className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent>
+          <PopoverContent className="w-80">
             <div className="space-y-2">
               <h4 className="font-medium">Conversation Starters</h4>
               {suggestions.map((suggestion, i) => (
                 <Button
                   key={i}
                   variant="ghost"
-                  className="w-full justify-start"
+                  className="w-full justify-start whitespace-normal text-left h-auto py-2"
                   onClick={() => setNewMessage(suggestion)}
                 >
-                  {suggestion}
+                  <span className="line-clamp-3">{suggestion}</span>
                 </Button>
               ))}
             </div>
