@@ -1,0 +1,29 @@
+[vite] connecting...
+[vite] connected.
+Warning: validateDOMNesting(...): <a> cannot appear as a descendant of &lt;a&gt;.
+    at a
+    at a
+    at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ff87ac33:337:18
+    at div
+    at div
+    at div
+    at nav
+    at Navigation (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/components/Navigation.tsx:24:22)
+    at div
+    at App (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/App.tsx:29:31)
+    at QueryClientProvider (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=ff87ac33:2805:3)
+at a
+at a
+at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/wouter.js?v=ff87ac33:337:18
+at div
+at div
+at div
+at nav
+at Navigation (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/components/Navigation.tsx:24:22)
+at div
+at App (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/App.tsx:29:31)
+at QueryClientProvider (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/@tanstack_react-query.js?v=ff87ac33:2805:3)
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400
