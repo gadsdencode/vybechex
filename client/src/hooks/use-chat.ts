@@ -46,9 +46,26 @@ export function useChat() {
     return res.json();
   };
 
+  const suggestionsMutation = useMutation({
+    mutationFn: getSuggestions,
+  });
+
+  const craftMessageMutation = useMutation({
+    mutationFn: ({ matchId, suggestion }: { matchId: number; suggestion: string }) =>
+      craftMessage(matchId, suggestion),
+  });
+
+  const eventSuggestionsMutation = useMutation({
+    mutationFn: getEventSuggestions,
+  });
+
   return {
-    getSuggestions,
-    craftMessage,
-    getEventSuggestions,
+    getSuggestions: suggestionsMutation.mutateAsync,
+    craftMessage: craftMessageMutation.mutateAsync,
+    getEventSuggestions: eventSuggestionsMutation.mutateAsync,
+    isLoading: 
+      suggestionsMutation.isPending || 
+      craftMessageMutation.isPending || 
+      eventSuggestionsMutation.isPending,
   };
 }

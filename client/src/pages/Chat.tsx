@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { useRoute } from "wouter";
 import { useMatches } from "../hooks/use-matches";
 import { useChat } from "../hooks/use-chat";
@@ -7,6 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Loader2, Send, Lightbulb, Calendar } from "lucide-react";
 import { useUser } from "../hooks/use-user";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "@/hooks/use-toast";
 import {
   Popover,
   PopoverContent,
@@ -14,51 +16,63 @@ import {
 } from "@/components/ui/popover";
 
 export default function Chat() {
-  const [, params] = useRoute("/chat/:id");
-  const matchId = parseInt(params?.id || "0");
+  const [, params] = useRoute<{ id: string }>("/chat/:id");
+  const matchId = params ? parseInt(params.id) : 0;
   const { user } = useUser();
   const { getMessages, sendMessage } = useMatches();
   const { getSuggestions, craftMessage, getEventSuggestions } = useChat();
-  const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [eventSuggestions, setEventSuggestions] = useState<string[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const { data: messages = [], isLoading: isLoadingMessages } = useQuery({
+    queryKey: ['/api/messages', matchId],
+    queryFn: () => getMessages(matchId),
+    refetchInterval: 3000, // Poll every 3 seconds for new messages
+  });
 
-  useEffect(() => {
-    loadMessages();
-    loadSuggestions();
-  }, [matchId]);
+  const { data: chatSuggestions = { suggestions: [] }, isLoading: isLoadingSuggestions } = useQuery({
+    queryKey: ['/api/suggest', matchId],
+    queryFn: () => getSuggestions(matchId),
+    staleTime: 30000, // Suggestions valid for 30 seconds
+  });
 
-  const loadMessages = async () => {
-    try {
-      const msgs = await getMessages(matchId);
-      setMessages(msgs);
-    } finally {
-      setIsLoading(false);
-    }
-  };
+  const { data: eventSuggestionsData = { suggestions: [] }, isLoading: isLoadingEvents } = useQuery({
+    queryKey: ['/api/events/suggest', matchId],
+    queryFn: () => getEventSuggestions(matchId),
+    staleTime: 60000, // Event suggestions valid for 1 minute
+  });
 
-  const loadSuggestions = async () => {
-    const { suggestions } = await getSuggestions(matchId);
-    setSuggestions(suggestions);
+  const isLoading = isLoadingMessages || isLoadingSuggestions || isLoadingEvents;
+  const suggestions = chatSuggestions.suggestions;
+  const eventSuggestions = eventSuggestionsData.suggestions;
 
-    const { suggestions: events } = await getEventSuggestions(matchId);
-    setEventSuggestions(events);
-  };
+  const queryClient = useQueryClient();
+  const { toast } = useToast();
+
+  const sendMessageMutation = useMutation({
+    mutationFn: sendMessage,
+    onSuccess: () => {
+      // Invalidate and refetch messages
+      queryClient.invalidateQueries({ queryKey: ['/api/messages', matchId] });
+      // Invalidate suggestions as conversation context has changed
+      queryClient.invalidateQueries({ queryKey: ['/api/suggest', matchId] });
+      setNewMessage("");
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to send message",
+        description: error.message,
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    try {
-      const msg = await sendMessage({ matchId, content: newMessage });
-      setMessages(prev => [msg, ...prev]);
-      setNewMessage("");
-      loadSuggestions();
-    } catch (error) {
-      console.error("Failed to send message:", error);
-    }
+    sendMessageMutation.mutate({ 
+      matchId, 
+      content: newMessage.trim() 
+    });
   };
 
   
@@ -108,14 +122,17 @@ export default function Chat() {
               <div className="p-2">
                 <h4 className="font-medium mb-3">Conversation Starters</h4>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                  {suggestions.map((suggestion, i) => (
+                  {suggestions.map((suggestion: string, i: number) => (
                     <Button
                       key={i}
                       variant="ghost"
                       className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
                       onClick={async () => {
                         try {
-                          const { message } = await craftMessage(matchId, suggestion);
+                          const { message } = await craftMessage({ 
+                            matchId, 
+                            suggestion 
+                          });
                           setNewMessage(message);
                         } catch (error) {
                           console.error("Failed to craft message:", error);
@@ -141,14 +158,17 @@ export default function Chat() {
               <div className="p-2">
                 <h4 className="font-medium mb-3">Suggested Activities</h4>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                  {eventSuggestions.map((event, i) => (
+                  {eventSuggestions.map((event: string, i: number) => (
                     <Button
                       key={i}
                       variant="ghost"
                       className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
                       onClick={async () => {
                         try {
-                          const { message } = await craftMessage(matchId, `Would you like to ${event.toLowerCase()}?`);
+                          const { message } = await craftMessage({ 
+                            matchId,
+                            suggestion: `Would you like to ${event.toLowerCase()}?`
+                          });
                           setNewMessage(message);
                         } catch (error) {
                           console.error("Failed to craft message:", error);

@@ -16,7 +16,8 @@ export function useMatches() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to send message");
+        const error = await res.text();
+        throw new Error(error || "Failed to send message");
       }
 
       return res.json();

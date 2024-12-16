@@ -24,10 +24,16 @@ export const matches = pgTable("matches", {
 
 export const messages = pgTable("messages", {
   id: serial("id").primaryKey(),
-  matchId: integer("match_id").notNull().references(() => matches.id),
-  senderId: integer("sender_id").notNull().references(() => users.id),
+  matchId: integer("match_id").notNull().references(() => matches.id, { onDelete: 'cascade' }),
+  senderId: integer("sender_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
   content: text("content").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
+  analyzed: boolean("analyzed").default(false),
+  sentiment: jsonb("sentiment").$type<{
+    score: number;
+    magnitude: number;
+    labels: string[];
+  }>(),
 });
 
 export const matchesRelations = relations(matches, ({ one }) => ({
@@ -52,9 +58,18 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   }),
 }));
 
+// Create schemas for validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
+export const insertMessageSchema = createInsertSchema(messages);
+export const selectMessageSchema = createSelectSchema(messages);
+export const insertMatchSchema = createInsertSchema(matches);
+export const selectMatchSchema = createSelectSchema(matches);
+
+// Export types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
 export type Match = typeof matches.$inferSelect;
+export type NewMatch = typeof matches.$inferInsert;
 export type Message = typeof messages.$inferSelect;
+export type NewMessage = typeof messages.$inferInsert;

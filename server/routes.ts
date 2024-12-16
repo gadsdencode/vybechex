@@ -169,12 +169,39 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/messages/:matchId", async (req, res) => {
     if (!req.user) return res.status(401).send("Not authenticated");
     
-    const matchMessages = await db.select()
-      .from(messages)
-      .where(eq(messages.matchId, parseInt(req.params.matchId)))
-      .orderBy(desc(messages.createdAt));
+    try {
+      const matchId = parseInt(req.params.matchId);
+      
+      // Verify the match exists and user is part of it
+      const [match] = await db
+        .select()
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, req.user.id),
+              eq(matches.userId2, req.user.id)
+            )
+          )
+        )
+        .limit(1);
 
-    res.json(matchMessages);
+      if (!match) {
+        return res.status(404).send("Match not found or you're not part of this match");
+      }
+
+      const matchMessages = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.matchId, matchId))
+        .orderBy(desc(messages.createdAt));
+
+      res.json(matchMessages);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      res.status(500).send("Failed to fetch messages");
+    }
   });
 
   // Send message
@@ -182,15 +209,41 @@ export function registerRoutes(app: Express): Server {
     if (!req.user) return res.status(401).send("Not authenticated");
     
     const { matchId, content } = req.body;
-    const newMessage = await db.insert(messages)
-      .values({
-        matchId,
-        senderId: req.user.id,
-        content
-      })
-      .returning();
+    
+    try {
+      // Verify the match exists and user is part of it
+      const [match] = await db
+        .select()
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, req.user.id),
+              eq(matches.userId2, req.user.id)
+            )
+          )
+        )
+        .limit(1);
 
-    res.json(newMessage[0]);
+      if (!match) {
+        return res.status(404).send("Match not found or you're not part of this match");
+      }
+
+      const [newMessage] = await db.insert(messages)
+        .values({
+          matchId,
+          senderId: req.user.id,
+          content: content.trim(),
+          createdAt: new Date()
+        })
+        .returning();
+
+      res.json(newMessage);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      res.status(500).send("Failed to send message");
+    }
   });
 
   // Get AI conversation suggestions
