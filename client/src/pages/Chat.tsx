@@ -52,8 +52,10 @@ export default function Chat() {
 
   const loadEventSuggestions = async () => {
     try {
-      const { suggestions } = await getEventSuggestions(matchId);
-      setEventSuggestions(suggestions);
+      const data = await getEventSuggestions(matchId);
+      if (data && data.suggestions) {
+        setEventSuggestions(data.suggestions);
+      }
     } catch (error) {
       console.error("Failed to load event suggestions:", error);
       setEventSuggestions([]);

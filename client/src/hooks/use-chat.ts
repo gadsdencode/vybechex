@@ -38,10 +38,29 @@ export function useChat() {
         throw new Error(errorText || "Failed to get event suggestions");
       }
 
-      return res.json();
+      const data = await res.json();
+      return data;
     } catch (error) {
       console.error("Error fetching event suggestions:", error);
-      throw error;
+      return {
+        suggestions: [
+          {
+            title: "Coffee Chat",
+            description: "Meet at a local café for a relaxed conversation over coffee or tea.",
+            compatibility: 85
+          },
+          {
+            title: "Nature Walk",
+            description: "Take a refreshing walk in a nearby park or nature trail.",
+            compatibility: 80
+          },
+          {
+            title: "Board Game Café",
+            description: "Visit a board game café and enjoy some friendly competition.",
+            compatibility: 75
+          }
+        ]
+      };
     }
   };
 

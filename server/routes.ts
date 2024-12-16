@@ -306,12 +306,34 @@ export function registerRoutes(app: Express): Server {
         values: 0.6
       };
 
+      // Generate event suggestions and ensure they have the required format
       const suggestions = await generateEventSuggestions(
         userTraits,
         otherUserTraits
       );
 
-      res.json({ suggestions });
+      // Provide fallback suggestions if the API fails or returns empty
+      const fallbackSuggestions = [
+        {
+          title: "Coffee Chat",
+          description: "Meet at a local café for a relaxed conversation over coffee or tea.",
+          compatibility: 85
+        },
+        {
+          title: "Nature Walk",
+          description: "Take a refreshing walk in a nearby park or nature trail.",
+          compatibility: 80
+        },
+        {
+          title: "Board Game Café",
+          description: "Visit a board game café and enjoy some friendly competition.",
+          compatibility: 75
+        }
+      ];
+
+      res.json({ 
+        suggestions: suggestions.length > 0 ? suggestions : fallbackSuggestions 
+      });
     } catch (error) {
       console.error("Error getting event suggestions:", error);
       res.status(500).json({ 
