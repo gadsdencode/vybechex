@@ -92,29 +92,27 @@ export async function generateEventSuggestions(
   const messages: ChatMessage[] = [
     {
       role: "system",
-      content: `You are an event planning assistant helping to suggest activities for potential friends to do together.
-      Consider both users' personality traits when making suggestions.
-      Focus on activities that would help build genuine connections.
-      Keep suggestions practical and specific to their traits.
-      Return exactly 3 suggestions, each with a title and detailed description.`
+      content: `You are an event planning assistant. Generate exactly 3 activities formatted as a numbered list:
+      1. Title: [Activity Name]
+      Description: [2-3 sentence description]
+      
+      Consider personality traits to suggest appropriate activities. Return only the formatted list.`
     },
     {
       role: "user",
-      content: `Generate event suggestions for two users with these personality traits:
+      content: `Generate 3 activity suggestions for two users with these traits:
 
-      User 1 traits:
-      ${Object.entries(userPersonality)
+      User 1: ${Object.entries(userPersonality)
         .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
-        .join("\n")}
+        .join(", ")}
       
-      User 2 traits:
-      ${Object.entries(matchPersonality)
+      User 2: ${Object.entries(matchPersonality)
         .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
-        .join("\n")}
+        .join(", ")}
       
-      Suggest 3 activities they might enjoy together based on their compatibility and traits.
-      Consider their extraversion levels, communication styles, and other traits.
-      Format each suggestion with a title and detailed description.`
+      Format each suggestion as:
+      1. Title: [Activity]
+      Description: [Description]`
     }
   ];
 
@@ -126,8 +124,9 @@ export async function generateEventSuggestions(
       .split(/\d\./)
       .filter(Boolean)
       .map(suggestion => {
-        const [title, ...descriptionParts] = suggestion.trim().split('\n');
-        const description = descriptionParts.join('\n').trim();
+        const lines = suggestion.trim().split('\n');
+        const title = lines[0].replace(/^Title:\s*/, '').trim();
+        const description = lines[1].replace(/^Description:\s*/, '').trim();
         
         // Calculate compatibility score based on relevant traits
         const compatibilityFactors = {
@@ -142,12 +141,17 @@ export async function generateEventSuggestions(
         );
 
         return {
-          title: title.replace(/^[-*]\s*/, ''),
-          description: description,
+          title,
+          description,
           compatibility
         };
       })
+      .filter(suggestion => suggestion.title && suggestion.description)
       .slice(0, 3);
+
+    if (suggestions.length === 0) {
+      throw new Error("Failed to parse suggestions from API response");
+    }
 
     return suggestions;
   } catch (error) {
@@ -155,19 +159,19 @@ export async function generateEventSuggestions(
     // Fallback suggestions if OpenAI API fails
     return [
       {
-        title: "Coffee and Conversation",
-        description: "Meet at a local café for casual conversation and getting to know each other better.",
+        title: "Coffee Chat",
+        description: "Meet at a local café for a relaxed conversation over coffee or tea. A casual setting perfect for getting to know each other better.",
+        compatibility: 85
+      },
+      {
+        title: "Nature Walk",
+        description: "Take a refreshing walk in a nearby park or nature trail. Perfect for combining light activity with meaningful conversation.",
         compatibility: 80
       },
       {
-        title: "Local Park Walk",
-        description: "Take a relaxing walk in a nearby park while discussing shared interests.",
+        title: "Board Game Café",
+        description: "Visit a board game café and enjoy some friendly competition. A fun way to break the ice and show different sides of your personality.",
         compatibility: 75
-      },
-      {
-        title: "Board Game Café Visit",
-        description: "Visit a board game café and enjoy some friendly competition while chatting.",
-        compatibility: 70
       }
     ];
   }
