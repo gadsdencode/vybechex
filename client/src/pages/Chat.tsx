@@ -52,9 +52,15 @@ export default function Chat() {
 
   const loadEventSuggestions = async () => {
     try {
-      const { suggestions } = await getEventSuggestions(matchId);
-      console.log("Loaded event suggestions:", suggestions);
-      setEventSuggestions(suggestions || []);
+      const response = await getEventSuggestions(matchId);
+      console.log("Event suggestions response:", response);
+      
+      if (response && Array.isArray(response.suggestions)) {
+        setEventSuggestions(response.suggestions);
+      } else {
+        console.error("Invalid event suggestions format:", response);
+        setEventSuggestions([]);
+      }
     } catch (error) {
       console.error("Failed to load event suggestions:", error);
       setEventSuggestions([]);
@@ -139,11 +145,14 @@ export default function Chat() {
                       className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
                       onClick={async () => {
                         try {
+                          // Get AI to craft a personalized message based on the suggestion
                           const { message } = await craftMessage(matchId, suggestion);
-                          setNewMessage(message);
+                          // Set the crafted message in the input field for user review
+                          setNewMessage(message || suggestion);
                         } catch (error) {
                           console.error("Failed to craft message:", error);
-                          setNewMessage(suggestion); // Fallback to original suggestion
+                          // On error, use the original suggestion as fallback
+                          setNewMessage(suggestion);
                         }
                       }}
                     >
