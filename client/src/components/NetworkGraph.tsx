@@ -40,12 +40,12 @@ export function NetworkGraph() {
       {
         id: user.id.toString(),
         name: user.name || user.username,
-        val: 20, // Make current user node larger
+        val: 40, // Make current user node larger
       },
       ...matches.map((match) => ({
         id: match.id.toString(),
         name: match.name || match.username,
-        val: 15,
+        val: 30,
       })),
     ];
 
@@ -91,25 +91,44 @@ export function NetworkGraph() {
         }}
         nodeCanvasObject={(node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
           const label = (node as any).name as string;
-          const fontSize = ((node as any).val as number) / 2;
-          ctx.font = `${fontSize}px Inter`;
+          const nodeSize = ((node as any).val as number);
+          const fontSize = Math.min(nodeSize / 3, 14); // Limit font size
+          
+          // Draw node circle
           ctx.fillStyle = getComputedColor(
             '--primary',
             node.id === user?.id?.toString() ? 1 : 0.7
           );
           ctx.beginPath();
-          ctx.arc(node.x!, node.y!, ((node as any).val as number) / 2, 0, 2 * Math.PI);
+          ctx.arc(node.x!, node.y!, nodeSize / 2, 0, 2 * Math.PI);
           ctx.fill();
           
-          // Draw the label
-          if (globalScale >= 1) {
+          // Draw the label with background
+          if (globalScale >= 0.8) {
+            ctx.font = `${fontSize}px Inter`;
+            const textWidth = ctx.measureText(label).width;
+            const padding = 4;
+            const textHeight = fontSize;
+            
+            // Draw text background
+            ctx.fillStyle = "hsl(var(--background))";
+            ctx.fillRect(
+              node.x! - textWidth / 2 - padding,
+              node.y! + nodeSize / 2 + padding,
+              textWidth + padding * 2,
+              textHeight + padding * 2
+            );
+            
+            // Draw text
             ctx.fillStyle = "hsl(var(--foreground))";
             ctx.textAlign = "center";
-            ctx.textBaseline = "middle";
-            ctx.fillText(label, node.x!, node.y! + ((node as any).val as number) / 1.5);
+            ctx.textBaseline = "top";
+            ctx.fillText(label, node.x!, node.y! + nodeSize / 2 + padding * 2);
           }
         }}
         cooldownTicks={100}
+        d3AlphaDecay={0.02} // Slower layout stabilization
+        d3VelocityDecay={0.3} // Smoother node movement
         width={800}
         height={400}
       />
