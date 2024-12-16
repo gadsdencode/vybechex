@@ -4,9 +4,86 @@ import { setupAuth } from "./auth.js";
 import { db } from "@db";
 import { matches, messages, users } from "@db/schema";
 import { and, eq, ne, desc } from "drizzle-orm";
+import { crypto } from "./auth.js";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
+
+  // Development-only route to create test users
+  if (app.get("env") === "development") {
+    app.post("/api/dev/create-test-users", async (req, res) => {
+      try {
+        // Create test users with predefined personality traits
+        const testUsers = [
+          {
+            username: "test_user1",
+            name: "Alex Johnson",
+            bio: "Love hiking and photography",
+            traits: {
+              extraversion: 0.8,
+              communication: 0.7,
+              openness: 0.9,
+              values: 0.6,
+              planning: 0.4,
+              sociability: 0.8
+            }
+          },
+          {
+            username: "test_user2",
+            name: "Sam Wilson",
+            bio: "Bookworm and coffee enthusiast",
+            traits: {
+              extraversion: 0.3,
+              communication: 0.8,
+              openness: 0.7,
+              values: 0.9,
+              planning: 0.8,
+              sociability: 0.4
+            }
+          },
+          {
+            username: "test_user3",
+            name: "Jordan Lee",
+            bio: "Tech geek and gamer",
+            traits: {
+              extraversion: 0.5,
+              communication: 0.6,
+              openness: 0.8,
+              values: 0.7,
+              planning: 0.6,
+              sociability: 0.6
+            }
+          }
+        ];
+
+        for (const testUser of testUsers) {
+          const [existingUser] = await db
+            .select()
+            .from(users)
+            .where(eq(users.username, testUser.username))
+            .limit(1);
+
+          if (!existingUser) {
+            const hashedPassword = await crypto.hash('testpass123');
+            await db.insert(users).values({
+              username: testUser.username,
+              password: hashedPassword, // crypto.hash already includes salt
+              name: testUser.name,
+              bio: testUser.bio,
+              quizCompleted: true,
+              personalityTraits: testUser.traits,
+              createdAt: new Date()
+            });
+          }
+        }
+
+        res.json({ message: "Test users created successfully" });
+      } catch (error) {
+        console.error("Error creating test users:", error);
+        res.status(500).json({ message: "Failed to create test users" });
+      }
+    });
+  }
 
   // Quiz submission
   app.post("/api/quiz", async (req, res) => {
