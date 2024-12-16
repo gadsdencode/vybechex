@@ -18,7 +18,7 @@ export default function Chat() {
   const matchId = parseInt(params?.id || "0");
   const { user } = useUser();
   const { getMessages, sendMessage } = useMatches();
-  const { getSuggestions } = useChat();
+  const { getSuggestions, craftMessage } = useChat();
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -57,6 +57,9 @@ export default function Chat() {
     }
   };
 
+  
+
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
@@ -89,7 +92,7 @@ export default function Chat() {
           placeholder="Type a message..."
           className="flex-1"
         />
-        
+
         <Popover>
           <PopoverTrigger asChild>
             <Button variant="outline" size="icon">
@@ -105,7 +108,15 @@ export default function Chat() {
                     key={i}
                     variant="ghost"
                     className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
-                    onClick={() => setNewMessage(suggestion)}
+                    onClick={async () => {
+                      try {
+                        const { message } = await craftMessage(matchId, suggestion);
+                        setNewMessage(message);
+                      } catch (error) {
+                        console.error("Failed to craft message:", error);
+                        setNewMessage(suggestion); // Fallback to original suggestion
+                      }
+                    }}
                   >
                     {suggestion}
                   </Button>

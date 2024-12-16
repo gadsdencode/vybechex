@@ -30,6 +30,42 @@ export async function getChatCompletion(messages: CreateChatCompletionRequestMes
   return data.choices[0].message.content;
 }
 
+export async function craftMessageFromSuggestion(
+  suggestion: string,
+  userPersonality: Record<string, number>,
+  matchPersonality: Record<string, number>
+) {
+  const messages = [
+    {
+      role: "system",
+      content: `You are a friendly conversation assistant helping users craft natural, engaging messages for a friendship matching platform. 
+      Your task is to create a natural, friendly message based on a conversation topic, considering both users' personality traits.
+      The message should be casual, warm, and authentic - as if it's coming from a real person who wants to make friends.`
+    },
+    {
+      role: "user",
+      content: `Given these personality traits:
+      Your traits: ${Object.entries(userPersonality)
+        .map(([trait, score]) => `${trait}: ${score * 100}%`)
+        .join(", ")}
+      Match's traits: ${Object.entries(matchPersonality)
+        .map(([trait, score]) => `${trait}: ${score * 100}%`)
+        .join(", ")}
+      
+      Please craft a natural, friendly message based on this conversation starter: "${suggestion}"
+      The message should be personal, engaging, and true to my personality traits.`
+    }
+  ];
+
+  try {
+    const response = await getChatCompletion(messages);
+    return response.replace(/^["']|["']$/g, ''); // Remove any quotes if present
+  } catch (error) {
+    console.error("Error crafting message:", error);
+    return suggestion; // Fallback to original suggestion if API fails
+  }
+}
+
 export async function generateConversationSuggestions(
   userPersonality: Record<string, number>,
   matchPersonality: Record<string, number>,

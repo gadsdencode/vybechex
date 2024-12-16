@@ -5,7 +5,7 @@ import { db } from "@db";
 import { matches, messages, users } from "@db/schema";
 import { and, eq, ne, desc } from "drizzle-orm";
 import { crypto } from "./auth.js";
-import { generateConversationSuggestions } from "./utils/openai";
+import { generateConversationSuggestions, craftMessageFromSuggestion } from "./utils/openai";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -236,6 +236,40 @@ export function registerRoutes(app: Express): Server {
           "What do you like to do for fun?",
           "Have you traveled anywhere interesting lately?"
         ]
+      });
+    }
+  });
+
+  // Craft a message from a suggestion
+  app.post("/api/craft-message", async (req, res) => {
+    if (!req.user) return res.status(401).send("Not authenticated");
+    
+    try {
+      const { suggestion, matchId } = req.body;
+      
+      // Get match's user data for personality traits
+      const [match] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, matchId))
+        .limit(1);
+
+      if (!match) {
+        return res.status(404).send("Match not found");
+      }
+
+      const craftedMessage = await craftMessageFromSuggestion(
+        suggestion,
+        req.user.personalityTraits || {},
+        match.personalityTraits || {}
+      );
+
+      res.json({ message: craftedMessage });
+    } catch (error) {
+      console.error("Error crafting message:", error);
+      res.status(500).json({ 
+        message: "Failed to craft message",
+        error: error instanceof Error ? error.message : String(error)
       });
     }
   });

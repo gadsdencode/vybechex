@@ -16,7 +16,23 @@ export function useChat() {
     return res.json();
   };
 
+  const craftMessage = async (matchId: number, suggestion: string) => {
+    const res = await fetch("/api/craft-message", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matchId, suggestion }),
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to craft message");
+    }
+
+    return res.json();
+  };
+
   return {
     getSuggestions,
+    craftMessage,
   };
 }
