@@ -5,6 +5,7 @@ import { db } from "@db";
 import { matches, messages, users } from "@db/schema";
 import { and, eq, ne, desc } from "drizzle-orm";
 import { crypto } from "./auth.js";
+import { generateConversationSuggestions } from "./utils/openai";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
