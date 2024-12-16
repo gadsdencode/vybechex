@@ -1,10 +1,10 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth } from "./auth.js";
+import { setupAuth } from "./auth";
 import { db } from "@db";
-import { matches, messages, users, groups, groupMembers } from "@db/schema";
+import { matches, messages, users, groups, groupMembers, matchesRelations } from "@db/schema";
 import { and, eq, ne, desc, sql, notInArray } from "drizzle-orm";
-import { crypto } from "./auth.js";
+import { crypto } from "./auth"; // Added missing import
 import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
 
 export function registerRoutes(app: Express): Server {
@@ -41,19 +41,6 @@ export function registerRoutes(app: Express): Server {
               planning: 0.8,
               sociability: 0.4
             }
-          },
-          {
-            username: "test_user3",
-            name: "Jordan Lee",
-            bio: "Tech geek and gamer",
-            traits: {
-              extraversion: 0.5,
-              communication: 0.6,
-              openness: 0.8,
-              values: 0.7,
-              planning: 0.6,
-              sociability: 0.6
-            }
           }
         ];
 
@@ -65,10 +52,9 @@ export function registerRoutes(app: Express): Server {
             .limit(1);
 
           if (!existingUser) {
-            const hashedPassword = await crypto.hash('testpass123');
             await db.insert(users).values({
               username: testUser.username,
-              password: hashedPassword, // crypto.hash already includes salt
+              password: await crypto.hash('testpass123'),
               name: testUser.name,
               bio: testUser.bio,
               quizCompleted: true,
@@ -91,8 +77,6 @@ export function registerRoutes(app: Express): Server {
     if (!req.user) return res.status(401).send("Not authenticated");
     const { traits } = req.body;
     
-    console.log("Quiz submission for user:", req.user.id, "traits:", traits);
-    
     try {
       const [updatedUser] = await db.update(users)
         .set({ 
@@ -102,9 +86,6 @@ export function registerRoutes(app: Express): Server {
         .where(eq(users.id, req.user.id))
         .returning();
 
-      console.log("Updated user:", updatedUser);
-
-      // Send back updated user data
       res.json({ 
         success: true,
         user: updatedUser
@@ -125,7 +106,6 @@ export function registerRoutes(app: Express): Server {
     try {
       const { name, description, maxMembers } = req.body;
       
-      // Create the group
       const [newGroup] = await db.insert(groups)
         .values({
           name,
@@ -135,7 +115,6 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      // Add creator as first member with creator role
       await db.insert(groupMembers)
         .values({
           groupId: newGroup.id,
@@ -143,7 +122,6 @@ export function registerRoutes(app: Express): Server {
           role: "creator"
         });
 
-      // Update user's group creator status
       await db.update(users)
         .set({ isGroupCreator: true })
         .where(eq(users.id, req.user.id));
@@ -153,142 +131,6 @@ export function registerRoutes(app: Express): Server {
       console.error("Error creating group:", error);
       res.status(500).json({ message: "Failed to create group" });
     }
-  });
-
-  app.get("/api/groups", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-
-    try {
-      const allGroups = await db.select()
-        .from(groups)
-        .leftJoin(groupMembers, eq(groups.id, groupMembers.groupId))
-        .where(eq(groups.isOpen, true));
-
-      // Count members for each group
-      const groupsWithCounts = await Promise.all(
-        allGroups.map(async (group) => {
-          const memberCount = await db
-            .select({ count: sql`count(*)` })
-            .from(groupMembers)
-            .where(eq(groupMembers.groupId, group.groups.id));
-
-          return {
-            ...group.groups,
-            memberCount: memberCount[0].count,
-            isMember: group.group_members?.userId === req.user.id
-          };
-        })
-      );
-
-      res.json(groupsWithCounts);
-    } catch (error) {
-      console.error("Error fetching groups:", error);
-      res.status(500).json({ message: "Failed to fetch groups" });
-    }
-  });
-
-  app.post("/api/groups/:groupId/join", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-    
-    try {
-      const groupId = parseInt(req.params.groupId);
-      
-      // Check if group exists and is open
-      const [group] = await db.select()
-        .from(groups)
-        .where(and(
-          eq(groups.id, groupId),
-          eq(groups.isOpen, true)
-        ))
-        .limit(1);
-
-      if (!group) {
-        return res.status(404).json({ message: "Group not found or not open for joining" });
-      }
-
-      // Check if user is already a member
-      const [existingMember] = await db.select()
-        .from(groupMembers)
-        .where(and(
-          eq(groupMembers.groupId, groupId),
-          eq(groupMembers.userId, req.user.id)
-        ))
-        .limit(1);
-
-      if (existingMember) {
-        return res.status(400).json({ message: "Already a member of this group" });
-      }
-
-      // Check member count against max members
-      const memberCount = await db
-        .select({ count: sql`count(*)` })
-        .from(groupMembers)
-        .where(eq(groupMembers.groupId, groupId));
-
-      if (memberCount[0].count >= group.maxMembers) {
-        return res.status(400).json({ message: "Group is full" });
-      }
-
-      // Add user as member
-      await db.insert(groupMembers)
-        .values({
-          groupId,
-          userId: req.user.id,
-          role: "member"
-        });
-
-      res.json({ message: "Successfully joined group" });
-    } catch (error) {
-      console.error("Error joining group:", error);
-      res.status(500).json({ message: "Failed to join group" });
-    }
-  });
-
-  // Get potential matches with compatibility scores
-  app.get("/api/matches", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-
-    const potentialMatches = await db.select()
-      .from(users)
-      .where(and(
-        ne(users.id, req.user.id),
-        eq(users.quizCompleted, true)
-      ));
-
-    // Calculate compatibility scores
-    const currentUserTraits = req.user.personalityTraits || {};
-    const matchesWithScores = potentialMatches.map(match => {
-      const matchTraits = match.personalityTraits || {};
-      let compatibilityScore = 0;
-      let traitCount = 0;
-
-      // Compare each personality trait
-      for (const trait in currentUserTraits) {
-        if (matchTraits[trait] !== undefined) {
-          // Calculate similarity (1 - absolute difference)
-          const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
-          compatibilityScore += similarity;
-          traitCount++;
-        }
-      }
-
-      // Calculate percentage (if there are matching traits)
-      const score = traitCount > 0 
-        ? Math.round((compatibilityScore / traitCount) * 100)
-        : 0;
-
-      return {
-        ...match,
-        compatibilityScore: score
-      };
-    });
-
-    // Sort by compatibility score (highest first)
-    const sortedMatches = matchesWithScores.sort((a, b) => 
-      b.compatibilityScore - a.compatibilityScore
-    );
-
-    res.json(sortedMatches);
   });
 
   // Get chat messages
@@ -308,7 +150,7 @@ export function registerRoutes(app: Express): Server {
     if (!req.user) return res.status(401).send("Not authenticated");
     
     const { matchId, content } = req.body;
-    const newMessage = await db.insert(messages)
+    const [newMessage] = await db.insert(messages)
       .values({
         matchId,
         senderId: req.user.id,
@@ -316,7 +158,7 @@ export function registerRoutes(app: Express): Server {
       })
       .returning();
 
-    res.json(newMessage[0]);
+    res.json(newMessage);
   });
 
   // Get AI conversation suggestions
@@ -326,15 +168,25 @@ export function registerRoutes(app: Express): Server {
     try {
       const { matchId } = req.body;
       
-      // Get match's user data
       const [match] = await db
         .select()
-        .from(users)
-        .where(eq(users.id, matchId))
+        .from(matches)
+        .where(eq(matches.id, matchId))
         .limit(1);
 
       if (!match) {
         return res.status(404).send("Match not found");
+      }
+
+      const otherUserId = match.userId1 === req.user.id ? match.userId2 : match.userId1;
+      const [otherUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, otherUserId))
+        .limit(1);
+
+      if (!otherUser) {
+        return res.status(404).send("Matched user not found");
       }
 
       // Get recent chat history
@@ -347,7 +199,7 @@ export function registerRoutes(app: Express): Server {
 
       const suggestions = await generateConversationSuggestions(
         req.user.personalityTraits || {},
-        match.personalityTraits || {},
+        otherUser.personalityTraits || {},
         recentMessages,
         req.user.id
       );
@@ -373,21 +225,31 @@ export function registerRoutes(app: Express): Server {
     try {
       const { suggestion, matchId } = req.body;
       
-      // Get match's user data for personality traits
       const [match] = await db
         .select()
-        .from(users)
-        .where(eq(users.id, matchId))
+        .from(matches)
+        .where(eq(matches.id, matchId))
         .limit(1);
 
       if (!match) {
         return res.status(404).send("Match not found");
       }
 
+      const otherUserId = match.userId1 === req.user.id ? match.userId2 : match.userId1;
+      const [otherUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, otherUserId))
+        .limit(1);
+
+      if (!otherUser) {
+        return res.status(404).send("Match not found");
+      }
+
       const craftedMessage = await craftMessageFromSuggestion(
         suggestion,
         req.user.personalityTraits || {},
-        match.personalityTraits || {}
+        otherUser.personalityTraits || {}
       );
 
       res.json({ message: craftedMessage });
@@ -398,6 +260,8 @@ export function registerRoutes(app: Express): Server {
         message: "Failed to craft message"
       });
     }
+  });
+
   // Get event suggestions for a match
   app.get("/api/event-suggestions/:matchId", async (req, res) => {
     if (!req.user) return res.status(401).send("Not authenticated");
@@ -405,27 +269,29 @@ export function registerRoutes(app: Express): Server {
     try {
       const matchId = parseInt(req.params.matchId);
       
-      // Get the match data to find both users
-      const match = await db.query.matches.findFirst({
-        where: eq(matches.id, matchId),
-        with: {
-          user1: true,
-          user2: true,
-        },
-      });
+      // Get both users from the match
+      const [match] = await db
+        .select()
+        .from(matches)
+        .where(eq(matches.id, matchId))
+        .limit(1);
 
       if (!match) {
         return res.status(404).send("Match not found");
       }
 
-      // Get both users' data
-      const otherUser = match.userId1 === req.user.id ? match.user2 : match.user1;
+      const otherUserId = match.userId1 === req.user.id ? match.userId2 : match.userId1;
+      const [otherUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, otherUserId))
+        .limit(1);
 
       if (!otherUser) {
-        return res.status(404).send("Matched user not found");
+        return res.status(404).send("Match not found");
       }
 
-      // Use dummy data for testing if personality traits are missing
+      // Use existing traits or fallback to test data
       const userTraits = req.user.personalityTraits || {
         extraversion: 0.7,
         communication: 0.8,
@@ -448,132 +314,65 @@ export function registerRoutes(app: Express): Server {
       res.json({ suggestions });
     } catch (error) {
       console.error("Error getting event suggestions:", error);
-      res.status(500).json({ message: "Failed to get event suggestions" });
+      res.status(500).json({ 
+        message: "Failed to get event suggestions",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 
-  });
-
-  // Get potential group matches with compatibility scores
-  app.get("/api/group-matches", async (req, res) => {
+  // Get potential matches with compatibility scores
+  app.get("/api/matches", async (req, res) => {
     if (!req.user) return res.status(401).send("Not authenticated");
 
     try {
-      // Get groups where the user is a member
-      const userGroups = await db.select()
-        .from(groupMembers)
-        .innerJoin(groups, eq(groupMembers.groupId, groups.id))
-        .where(eq(groupMembers.userId, req.user.id));
+      const potentialMatches = await db.select()
+        .from(users)
+        .where(and(
+          ne(users.id, req.user.id),
+          eq(users.quizCompleted, true)
+        ));
 
-      if (userGroups.length === 0) {
-        return res.json([]);
-      }
+      // Calculate compatibility scores
+      const currentUserTraits = req.user.personalityTraits || {};
+      const matchesWithScores = potentialMatches.map(match => {
+        const matchTraits = match.personalityTraits || {};
+        let compatibilityScore = 0;
+        let traitCount = 0;
 
-      // Get all other groups
-      const allGroups = await db.select()
-        .from(groups)
-        .where(
-          and(
-            eq(groups.isOpen, true),
-            notInArray(
-              groups.id,
-              userGroups.map(g => g.groups.id)
-            )
-          )
-        );
+        // Compare each personality trait
+        for (const trait in currentUserTraits) {
+          if (matchTraits[trait] !== undefined) {
+            // Calculate similarity (1 - absolute difference)
+            const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
+            compatibilityScore += similarity;
+            traitCount++;
+          }
+        }
 
-      // For each user group, calculate compatibility with other groups
-      const matches = await Promise.all(
-        userGroups.flatMap(async userGroup => {
-          // Get all members of user's group
-          const groupMembers = await db.select()
-            .from(users)
-            .innerJoin(
-              groupMembers,
-              and(
-                eq(groupMembers.userId, users.id),
-                eq(groupMembers.groupId, userGroup.groups.id)
-              )
-            )
-            .where(eq(users.quizCompleted, true));
+        // Calculate percentage (if there are matching traits)
+        const score = traitCount > 0 
+          ? Math.round((compatibilityScore / traitCount) * 100)
+          : 0;
 
-          // Calculate average personality traits for user's group
-          const groupTraits = groupMembers.reduce((acc, member) => {
-            const traits = member.users.personalityTraits || {};
-            Object.entries(traits).forEach(([trait, value]) => {
-              acc[trait] = (acc[trait] || 0) + value;
-            });
-            return acc;
-          }, {} as Record<string, number>);
+        return {
+          ...match,
+          compatibilityScore: score
+        };
+      });
 
-          // Normalize the traits by member count
-          Object.keys(groupTraits).forEach(trait => {
-            groupTraits[trait] /= groupMembers.length;
-          });
-
-          // Calculate compatibility with other groups
-          return Promise.all(allGroups.map(async otherGroup => {
-            // Get other group's members
-            const otherGroupMembers = await db.select()
-              .from(users)
-              .innerJoin(
-                groupMembers,
-                and(
-                  eq(groupMembers.userId, users.id),
-                  eq(groupMembers.groupId, otherGroup.id)
-                )
-              )
-              .where(eq(users.quizCompleted, true));
-
-            // Calculate average traits for other group
-            const otherGroupTraits = otherGroupMembers.reduce((acc, member) => {
-              const traits = member.users.personalityTraits || {};
-              Object.entries(traits).forEach(([trait, value]) => {
-                acc[trait] = (acc[trait] || 0) + value;
-              });
-              return acc;
-            }, {} as Record<string, number>);
-
-            // Normalize the traits
-            Object.keys(otherGroupTraits).forEach(trait => {
-              otherGroupTraits[trait] /= otherGroupMembers.length;
-            });
-
-            // Calculate compatibility score
-            let compatibilityScore = 0;
-            let traitCount = 0;
-
-            for (const trait in groupTraits) {
-              if (otherGroupTraits[trait] !== undefined) {
-                const similarity = 1 - Math.abs(groupTraits[trait] - otherGroupTraits[trait]);
-                compatibilityScore += similarity;
-                traitCount++;
-              }
-            }
-
-            const score = traitCount > 0
-              ? Math.round((compatibilityScore / traitCount) * 100)
-              : 0;
-
-            return {
-              userGroup: userGroup.groups,
-              matchedGroup: otherGroup,
-              compatibilityScore: score,
-              memberCount: otherGroupMembers.length
-            };
-          }));
-        })
+      // Sort by compatibility score (highest first)
+      const sortedMatches = matchesWithScores.sort((a, b) => 
+        b.compatibilityScore - a.compatibilityScore
       );
 
-      // Flatten and sort by compatibility score
-      const flattenedMatches = matches
-        .flat()
-        .sort((a, b) => b.compatibilityScore - a.compatibilityScore);
-
-      res.json(flattenedMatches);
+      res.json(sortedMatches);
     } catch (error) {
-      console.error("Error getting group matches:", error);
-      res.status(500).json({ message: "Failed to get group matches" });
+      console.error("Error getting matches:", error);
+      res.status(500).json({ 
+        message: "Failed to get matches",
+        error: error instanceof Error ? error.message : String(error)
+      });
     }
   });
 

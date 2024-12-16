@@ -17,15 +17,21 @@ export function useChat() {
   };
 
   const getEventSuggestions = async (matchId: number) => {
-    const res = await fetch(`/api/event-suggestions/${matchId}`, {
-      credentials: "include",
-    });
+    try {
+      const res = await fetch(`/api/event-suggestions/${matchId}`, {
+        credentials: "include",
+      });
 
-    if (!res.ok) {
-      throw new Error("Failed to get event suggestions");
+      if (!res.ok) {
+        const errorText = await res.text();
+        throw new Error(errorText || "Failed to get event suggestions");
+      }
+
+      return res.json();
+    } catch (error) {
+      console.error("Error fetching event suggestions:", error);
+      throw error;
     }
-
-    return res.json();
   };
 
   const craftMessage = async (matchId: number, suggestion: string) => {
