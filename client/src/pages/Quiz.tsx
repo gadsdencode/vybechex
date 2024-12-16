@@ -8,19 +8,39 @@ const questions = [
   {
     id: 1,
     text: "How do you prefer to spend your free time?",
-    options: ["Socializing", "Reading/Solo activities", "Mix of both", "Outdoor adventures"],
+    options: ["Socializing with friends", "Reading or solo activities", "Mix of both", "Outdoor adventures"],
+    trait: "extraversion"
   },
   {
     id: 2,
-    text: "What's your ideal weekend activity?",
-    options: ["Party/Events", "Relaxing at home", "Sports/Exercise", "Creative projects"],
+    text: "What's your communication style?",
+    options: ["Direct and straightforward", "Diplomatic and tactful", "Mix depending on situation", "Prefer listening to speaking"],
+    trait: "communication"
   },
   {
     id: 3,
     text: "How do you handle new situations?",
-    options: ["Jump right in", "Observe first", "Depends on mood", "Carefully plan"],
+    options: ["Jump right in", "Observe first", "Go with the flow", "Plan carefully"],
+    trait: "openness"
   },
-  // Add more questions as needed
+  {
+    id: 4,
+    text: "What do you value most in friendships?",
+    options: ["Loyalty and trust", "Fun and excitement", "Deep conversations", "Similar interests"],
+    trait: "values"
+  },
+  {
+    id: 5,
+    text: "How do you prefer to make plans?",
+    options: ["Spontaneous decisions", "Structured planning", "Flexible scheduling", "Go with group consensus"],
+    trait: "planning"
+  },
+  {
+    id: 6,
+    text: "What's your ideal group size for social activities?",
+    options: ["Large groups (6+ people)", "Small groups (2-3 people)", "One-on-one interactions", "Depends on the activity"],
+    trait: "sociability"
+  }
 ];
 
 export default function Quiz() {
@@ -30,7 +50,16 @@ export default function Quiz() {
   const { toast } = useToast();
 
   const handleAnswer = async (questionId: number, answerIndex: number) => {
-    const newAnswers = { ...answers, [questionId]: answerIndex };
+    const question = questions.find(q => q.id === questionId);
+    if (!question) return;
+
+    // Calculate trait score based on answer index (0-3)
+    // This creates a personality profile where each trait is scored 0-1
+    const traitScore = (3 - answerIndex) / 3; // Normalize to 0-1 range
+    const newAnswers = {
+      ...answers,
+      [question.trait]: traitScore
+    };
     setAnswers(newAnswers);
 
     if (currentQuestion < questions.length - 1) {
@@ -48,7 +77,8 @@ export default function Quiz() {
 
         toast({
           title: "Quiz completed!",
-          description: "Let's find you some matches!",
+          description: "Great! Now let's find you some compatible friends!",
+          variant: "default"
         });
 
         navigate("/matches");
