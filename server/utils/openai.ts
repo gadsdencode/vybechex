@@ -1,11 +1,8 @@
-interface ChatMessage {
-  role: "system" | "user" | "assistant";
-  content: string;
-}
+import { CreateChatCompletionRequestMessage } from "openai";
 
 const OPENAI_API_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
-export async function getChatCompletion(messages: ChatMessage[]) {
+export async function getChatCompletion(messages: CreateChatCompletionRequestMessage[]) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set");
   }
@@ -41,32 +38,22 @@ export async function craftMessageFromSuggestion(
   const messages = [
     {
       role: "system",
-      content: `You are a friendly conversation assistant crafting natural messages for a friendship matching platform.
-      Create a warm, authentic message that sounds like it's coming from a real person who wants to make friends.
-      Consider personality traits to adapt the tone and style of the message:
-      - High extraversion: More enthusiastic, energetic tone
-      - Low extraversion: More thoughtful, measured approach
-      - High communication: More detailed, expressive language
-      - High openness: More creative, curious phrasing
-      - High values: More emphasis on shared interests and beliefs
-      The message should be 2-3 sentences long, friendly but not overly familiar.`
+      content: `You are a friendly conversation assistant helping users craft natural, engaging messages for a friendship matching platform. 
+      Your task is to create a natural, friendly message based on a conversation topic, considering both users' personality traits.
+      The message should be casual, warm, and authentic - as if it's coming from a real person who wants to make friends.`
     },
     {
       role: "user",
-      content: `Here are the personality traits to consider:
-      
-      My traits:
-      ${Object.entries(userPersonality)
-        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
-        .join("\n")}
-      
-      Their traits:
-      ${Object.entries(matchPersonality)
-        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
-        .join("\n")}
+      content: `Given these personality traits:
+      Your traits: ${Object.entries(userPersonality)
+        .map(([trait, score]) => `${trait}: ${score * 100}%`)
+        .join(", ")}
+      Match's traits: ${Object.entries(matchPersonality)
+        .map(([trait, score]) => `${trait}: ${score * 100}%`)
+        .join(", ")}
       
       Please craft a natural, friendly message based on this conversation starter: "${suggestion}"
-      Make it feel authentic and aligned with my personality traits while being mindful of their traits.`
+      The message should be personal, engaging, and true to my personality traits.`
     }
   ];
 
@@ -76,104 +63,6 @@ export async function craftMessageFromSuggestion(
   } catch (error) {
     console.error("Error crafting message:", error);
     return suggestion; // Fallback to original suggestion if API fails
-  }
-}
-
-export interface EventSuggestion {
-  title: string;
-  description: string;
-  compatibility: number; // 0-100 score of how well this matches both users
-}
-
-export async function generateEventSuggestions(
-  userPersonality: Record<string, number>,
-  matchPersonality: Record<string, number>
-): Promise<EventSuggestion[]> {
-  const messages: ChatMessage[] = [
-    {
-      role: "system",
-      content: `You are an event planning assistant. Generate exactly 3 activities formatted as a numbered list:
-      1. Title: [Activity Name]
-      Description: [2-3 sentence description]
-      
-      Consider personality traits to suggest appropriate activities. Return only the formatted list.`
-    },
-    {
-      role: "user",
-      content: `Generate 3 activity suggestions for two users with these traits:
-
-      User 1: ${Object.entries(userPersonality)
-        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
-        .join(", ")}
-      
-      User 2: ${Object.entries(matchPersonality)
-        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
-        .join(", ")}
-      
-      Format each suggestion as:
-      1. Title: [Activity]
-      Description: [Description]`
-    }
-  ];
-
-  try {
-    const completion = await getChatCompletion(messages);
-    
-    // Parse the completion into structured suggestions
-    const suggestions = completion
-      .split(/\d\./)
-      .filter(Boolean)
-      .map(suggestion => {
-        const lines = suggestion.trim().split('\n');
-        const title = lines[0].replace(/^Title:\s*/, '').trim();
-        const description = lines[1].replace(/^Description:\s*/, '').trim();
-        
-        // Calculate compatibility score based on relevant traits
-        const compatibilityFactors = {
-          extraversion: 1 - Math.abs(userPersonality.extraversion - matchPersonality.extraversion),
-          communication: 1 - Math.abs(userPersonality.communication - matchPersonality.communication),
-          openness: 1 - Math.abs(userPersonality.openness - matchPersonality.openness),
-        };
-        
-        const compatibility = Math.round(
-          (Object.values(compatibilityFactors).reduce((sum, score) => sum + score, 0) / 
-          Object.keys(compatibilityFactors).length) * 100
-        );
-
-        return {
-          title,
-          description,
-          compatibility
-        };
-      })
-      .filter(suggestion => suggestion.title && suggestion.description)
-      .slice(0, 3);
-
-    if (suggestions.length === 0) {
-      throw new Error("Failed to parse suggestions from API response");
-    }
-
-    return suggestions;
-  } catch (error) {
-    console.error("Error generating event suggestions:", error);
-    // Fallback suggestions if OpenAI API fails
-    return [
-      {
-        title: "Coffee Chat",
-        description: "Meet at a local café for a relaxed conversation over coffee or tea. A casual setting perfect for getting to know each other better.",
-        compatibility: 85
-      },
-      {
-        title: "Nature Walk",
-        description: "Take a refreshing walk in a nearby park or nature trail. Perfect for combining light activity with meaningful conversation.",
-        compatibility: 80
-      },
-      {
-        title: "Board Game Café",
-        description: "Visit a board game café and enjoy some friendly competition. A fun way to break the ice and show different sides of your personality.",
-        compatibility: 75
-      }
-    ];
   }
 }
 

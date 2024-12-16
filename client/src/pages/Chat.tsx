@@ -5,14 +5,13 @@ import { useChat } from "../hooks/use-chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Loader2, Send, Lightbulb, Calendar } from "lucide-react";
+import { Loader2, Send, Lightbulb } from "lucide-react";
 import { useUser } from "../hooks/use-user";
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 export default function Chat() {
   const [, params] = useRoute("/chat/:id");
@@ -23,17 +22,11 @@ export default function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [eventSuggestions, setEventSuggestions] = useState<Array<{
-    title: string;
-    description: string;
-    compatibility: number;
-  }>>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     loadMessages();
     loadSuggestions();
-    loadEventSuggestions();
   }, [matchId]);
 
   const loadMessages = async () => {
@@ -48,23 +41,6 @@ export default function Chat() {
   const loadSuggestions = async () => {
     const { suggestions } = await getSuggestions(matchId);
     setSuggestions(suggestions);
-  };
-
-  const loadEventSuggestions = async () => {
-    try {
-      const response = await getEventSuggestions(matchId);
-      console.log("Event suggestions response:", response);
-      
-      if (response && Array.isArray(response.suggestions)) {
-        setEventSuggestions(response.suggestions);
-      } else {
-        console.error("Invalid event suggestions format:", response);
-        setEventSuggestions([]);
-      }
-    } catch (error) {
-      console.error("Failed to load event suggestions:", error);
-      setEventSuggestions([]);
-    }
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -123,70 +99,30 @@ export default function Chat() {
               <Lightbulb className="h-4 w-4" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-[400px]">
-            <Tabs defaultValue="conversation">
-              <TabsList className="w-full mb-4">
-                <TabsTrigger value="conversation" className="flex-1">
-                  <Lightbulb className="h-4 w-4 mr-2" />
-                  Conversation
-                </TabsTrigger>
-                <TabsTrigger value="events" className="flex-1">
-                  <Calendar className="h-4 w-4 mr-2" />
-                  Events
-                </TabsTrigger>
-              </TabsList>
-
-              <TabsContent value="conversation" className="mt-0">
-                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                  {suggestions.map((suggestion, i) => (
-                    <Button
-                      key={i}
-                      variant="ghost"
-                      className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
-                      onClick={async () => {
-                        try {
-                          // Get AI to craft a personalized message based on the suggestion
-                          const { message } = await craftMessage(matchId, suggestion);
-                          // Set the crafted message in the input field for user review
-                          setNewMessage(message || suggestion);
-                        } catch (error) {
-                          console.error("Failed to craft message:", error);
-                          // On error, use the original suggestion as fallback
-                          setNewMessage(suggestion);
-                        }
-                      }}
-                    >
-                      {suggestion}
-                    </Button>
-                  ))}
-                </div>
-              </TabsContent>
-
-              <TabsContent value="events" className="mt-0">
-                <div className="space-y-4 max-h-[400px] overflow-y-auto pr-2">
-                  {eventSuggestions.map((event, i) => (
-                    <div key={i} className="space-y-2 p-3 rounded-lg bg-muted/50">
-                      <div className="flex items-center justify-between">
-                        <h4 className="font-medium">{event.title}</h4>
-                        <span className="text-sm text-muted-foreground">
-                          {event.compatibility}% compatible
-                        </span>
-                      </div>
-                      <p className="text-sm text-muted-foreground">{event.description}</p>
-                      <Button
-                        variant="secondary"
-                        className="w-full mt-2"
-                        onClick={() => {
-                          setNewMessage(`Would you be interested in ${event.title.toLowerCase()}? I think it could be fun!`);
-                        }}
-                      >
-                        Suggest this activity
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              </TabsContent>
-            </Tabs>
+          <PopoverContent className="w-96">
+            <div className="p-2">
+              <h4 className="font-medium mb-3">Conversation Starters</h4>
+              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                {suggestions.map((suggestion, i) => (
+                  <Button
+                    key={i}
+                    variant="ghost"
+                    className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
+                    onClick={async () => {
+                      try {
+                        const { message } = await craftMessage(matchId, suggestion);
+                        setNewMessage(message);
+                      } catch (error) {
+                        console.error("Failed to craft message:", error);
+                        setNewMessage(suggestion); // Fallback to original suggestion
+                      }
+                    }}
+                  >
+                    {suggestion}
+                  </Button>
+                ))}
+              </div>
+            </div>
           </PopoverContent>
         </Popover>
 

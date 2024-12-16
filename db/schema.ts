@@ -11,34 +11,6 @@ export const users = pgTable("users", {
   quizCompleted: boolean("quiz_completed").default(false),
   personalityTraits: jsonb("personality_traits").$type<Record<string, number>>(),
   createdAt: timestamp("created_at").defaultNow(),
-  isGroupCreator: boolean("is_group_creator").default(false),
-});
-
-export const groups = pgTable("groups", {
-  id: serial("id").primaryKey(),
-  name: text("name").notNull(),
-  description: text("description"),
-  creatorId: integer("creator_id").notNull().references(() => users.id),
-  maxMembers: integer("max_members").notNull().default(10),
-  isOpen: boolean("is_open").default(true),
-  createdAt: timestamp("created_at").defaultNow(),
-});
-
-export const groupMembers = pgTable("group_members", {
-  id: serial("id").primaryKey(),
-  groupId: integer("group_id").notNull().references(() => groups.id),
-  userId: integer("user_id").notNull().references(() => users.id),
-  role: text("role").notNull().default("member"), // creator, admin, member
-  joinedAt: timestamp("joined_at").defaultNow(),
-});
-
-export const groupMatches = pgTable("group_matches", {
-  id: serial("id").primaryKey(),
-  groupId1: integer("group_id_1").notNull().references(() => groups.id),
-  groupId2: integer("group_id_2").notNull().references(() => groups.id),
-  compatibilityScore: integer("compatibility_score").notNull(),
-  status: text("status").notNull().default("pending"), // pending, accepted, rejected
-  createdAt: timestamp("created_at").defaultNow(),
 });
 
 export const matches = pgTable("matches", {
@@ -58,46 +30,14 @@ export const messages = pgTable("messages", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
-export const groupsRelations = relations(groups, ({ one, many }) => ({
-  creator: one(users, {
-    fields: [groups.creatorId],
-    references: [users.id],
-  }),
-  members: many(groupMembers),
-}));
-
-export const groupMembersRelations = relations(groupMembers, ({ one }) => ({
-  group: one(groups, {
-    fields: [groupMembers.groupId],
-    references: [groups.id],
-  }),
-  user: one(users, {
-    fields: [groupMembers.userId],
-    references: [users.id],
-  }),
-}));
-
-export const groupMatchesRelations = relations(groupMatches, ({ one }) => ({
-  group1: one(groups, {
-    fields: [groupMatches.groupId1],
-    references: [groups.id],
-  }),
-  group2: one(groups, {
-    fields: [groupMatches.groupId2],
-    references: [groups.id],
-  }),
-}));
-
 export const matchesRelations = relations(matches, ({ one }) => ({
   user1: one(users, {
     fields: [matches.userId1],
     references: [users.id],
-    relationName: "user1",
   }),
   user2: one(users, {
     fields: [matches.userId2],
     references: [users.id],
-    relationName: "user2",
   }),
 }));
 
@@ -114,13 +54,7 @@ export const messagesRelations = relations(messages, ({ one }) => ({
 
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
-export const insertGroupSchema = createInsertSchema(groups);
-export const selectGroupSchema = createSelectSchema(groups);
-
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
-export type Group = typeof groups.$inferSelect;
-export type NewGroup = typeof groups.$inferInsert;
-export type GroupMember = typeof groupMembers.$inferSelect;
 export type Match = typeof matches.$inferSelect;
 export type Message = typeof messages.$inferSelect;

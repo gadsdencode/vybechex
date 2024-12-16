@@ -5,7 +5,6 @@ import Home from "./pages/Home";
 import Quiz from "./pages/Quiz";
 import Matches from "./pages/Matches";
 import Chat from "./pages/Chat";
-import Groups from "./pages/Groups";
 import Navigation from "./components/Navigation";
 import AuthPage from "./pages/AuthPage";
 
@@ -33,7 +32,6 @@ function App() {
           <Route path="/quiz" component={Quiz} />
           <Route path="/matches" component={Matches} />
           <Route path="/chat/:id" component={Chat} />
-          <Route path="/groups" component={Groups} />
           <Route>404 - Not Found</Route>
         </Switch>
       </main>
