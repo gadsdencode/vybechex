@@ -9,8 +9,12 @@ import { Loader2 } from "lucide-react";
 // Utility function to get computed color values
 function getComputedColor(variable: string, opacity: number = 1): string {
   const style = getComputedStyle(document.documentElement);
-  const hue = style.getPropertyValue('--primary').trim();
-  return `hsla(${hue}, 65%, 48%, ${opacity})`;
+  const primary = style.getPropertyValue('--primary');
+  // Extract HSL values from the CSS variable
+  const match = primary.match(/(\d+\.?\d*)\s+(\d+\.?\d*)%\s+(\d+\.?\d*)%/);
+  if (!match) return `hsla(222.2, 47.4%, 11.2%, ${opacity})`; // Fallback
+  const [_, h, s, l] = match;
+  return `hsla(${h}, ${s}%, ${l}%, ${opacity})`;
 }
 
 interface GraphData {
@@ -111,7 +115,7 @@ export function NetworkGraph() {
             const textHeight = fontSize;
             
             // Draw text background
-            ctx.fillStyle = "hsl(var(--background))";
+            ctx.fillStyle = "#ffffff"; // White background for better contrast
             ctx.fillRect(
               node.x! - textWidth / 2 - padding,
               node.y! + nodeSize / 2 + padding,
@@ -120,7 +124,7 @@ export function NetworkGraph() {
             );
             
             // Draw text
-            ctx.fillStyle = "hsl(var(--foreground))";
+            ctx.fillStyle = "#000000"; // Black text for maximum readability
             ctx.textAlign = "center";
             ctx.textBaseline = "top";
             ctx.fillText(label, node.x!, node.y! + nodeSize / 2 + padding * 2);
