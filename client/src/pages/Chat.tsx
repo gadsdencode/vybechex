@@ -5,7 +5,7 @@ import { useChat } from "../hooks/use-chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
-import { Loader2, Send, Lightbulb } from "lucide-react";
+import { Loader2, Send, Lightbulb, Calendar } from "lucide-react";
 import { useUser } from "../hooks/use-user";
 import {
   Popover,
@@ -22,6 +22,7 @@ export default function Chat() {
   const [messages, setMessages] = useState<any[]>([]);
   const [newMessage, setNewMessage] = useState("");
   const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [eventSuggestions, setEventSuggestions] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
@@ -41,6 +42,9 @@ export default function Chat() {
   const loadSuggestions = async () => {
     const { suggestions } = await getSuggestions(matchId);
     setSuggestions(suggestions);
+
+    const { suggestions: events } = await getEventSuggestions(matchId);
+    setEventSuggestions(events);
   };
 
   const handleSend = async (e: React.FormEvent) => {
@@ -93,38 +97,65 @@ export default function Chat() {
           className="flex-1"
         />
 
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="icon">
-              <Lightbulb className="h-4 w-4" />
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-96">
-            <div className="p-2">
-              <h4 className="font-medium mb-3">Conversation Starters</h4>
-              <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                {suggestions.map((suggestion, i) => (
-                  <Button
-                    key={i}
-                    variant="ghost"
-                    className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
-                    onClick={async () => {
-                      try {
-                        const { message } = await craftMessage(matchId, suggestion);
-                        setNewMessage(message);
-                      } catch (error) {
-                        console.error("Failed to craft message:", error);
-                        setNewMessage(suggestion); // Fallback to original suggestion
-                      }
-                    }}
-                  >
-                    {suggestion}
-                  </Button>
-                ))}
+        <div className="flex gap-2">
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="icon">
+                <Lightbulb className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-96">
+              <div className="p-2">
+                <h4 className="font-medium mb-3">Conversation Starters</h4>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                  {suggestions.map((suggestion, i) => (
+                    <Button
+                      key={i}
+                      variant="ghost"
+                      className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
+                      onClick={async () => {
+                        try {
+                          const { message } = await craftMessage(matchId, suggestion);
+                          setNewMessage(message);
+                        } catch (error) {
+                          console.error("Failed to craft message:", error);
+                          setNewMessage(suggestion); // Fallback to original suggestion
+                        }
+                      }}
+                    >
+                      {suggestion}
+                    </Button>
+                  ))}
+                </div>
               </div>
-            </div>
-          </PopoverContent>
-        </Popover>
+            </PopoverContent>
+          </Popover>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" size="icon">
+                <Calendar className="h-4 w-4" />
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-96">
+              <div className="p-2">
+                <h4 className="font-medium mb-3">Suggested Activities</h4>
+                <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
+                  {eventSuggestions.map((event, i) => (
+                    <Button
+                      key={i}
+                      variant="ghost"
+                      className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
+                      onClick={() => setNewMessage(`Would you like to ${event.toLowerCase()}?`)}
+                    >
+                      {event}
+                    </Button>
+                  ))}
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </div>
 
         <Button type="submit" size="icon">
           <Send className="h-4 w-4" />

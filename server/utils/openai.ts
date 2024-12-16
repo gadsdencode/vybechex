@@ -125,3 +125,48 @@ export async function generateConversationSuggestions(
     ];
   }
 }
+
+export async function generateEventSuggestions(
+  userPersonality: Record<string, number>,
+  matchPersonality: Record<string, number>
+) {
+  const messages = [
+    {
+      role: "system",
+      content: `You are an event suggestion assistant helping users find activities they might both enjoy based on their personality traits. 
+      Suggest events and activities that would appeal to both users given their personality profiles.
+      Keep suggestions practical, specific, and tailored to common interests.`
+    },
+    {
+      role: "user",
+      content: `Given these personality traits:
+      User 1 traits: ${Object.entries(userPersonality)
+        .map(([trait, score]) => `${trait}: ${score * 100}%`)
+        .join(", ")}
+      User 2 traits: ${Object.entries(matchPersonality)
+        .map(([trait, score]) => `${trait}: ${score * 100}%`)
+        .join(", ")}
+      
+      Generate 3 specific event or activity suggestions that both users would enjoy doing together.
+      Consider their personality compatibility and shared trait strengths.`
+    }
+  ];
+
+  try {
+    const completion = await getChatCompletion(messages);
+    const suggestions = completion
+      .split(/\d\./)
+      .filter(Boolean)
+      .map(s => s.trim())
+      .slice(0, 3);
+
+    return suggestions;
+  } catch (error) {
+    console.error("Error generating event suggestions:", error);
+    return [
+      "Visit a local art gallery or museum together",
+      "Have coffee at a quiet café and chat",
+      "Take a walking tour of the city",
+    ];
+  }
+}

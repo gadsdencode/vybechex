@@ -5,7 +5,7 @@ import { db } from "@db";
 import { matches, messages, users } from "@db/schema";
 import { and, eq, ne, desc } from "drizzle-orm";
 import { crypto } from "./auth.js";
-import { generateConversationSuggestions, craftMessageFromSuggestion } from "./utils/openai";
+import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -270,6 +270,43 @@ export function registerRoutes(app: Express): Server {
       res.status(500).json({ 
         message: "Failed to craft message",
         error: error instanceof Error ? error.message : String(error)
+      });
+    }
+  });
+
+  // Get event suggestions
+  app.post("/api/events/suggest", async (req, res) => {
+    if (!req.user) return res.status(401).send("Not authenticated");
+    
+    try {
+      const { matchId } = req.body;
+      
+      // Get match's user data
+      const [match] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, matchId))
+        .limit(1);
+
+      if (!match) {
+        return res.status(404).send("Match not found");
+      }
+
+      const suggestions = await generateEventSuggestions(
+        req.user.personalityTraits || {},
+        match.personalityTraits || {}
+      );
+
+      res.json({ suggestions });
+    } catch (error) {
+      console.error("Error generating event suggestions:", error);
+      res.status(500).json({ 
+        message: "Failed to generate event suggestions",
+        suggestions: [
+          "Visit a local art gallery or museum together",
+          "Have coffee at a quiet café and chat",
+          "Take a walking tour of the city"
+        ]
       });
     }
   });

@@ -31,8 +31,24 @@ export function useChat() {
     return res.json();
   };
 
+  const getEventSuggestions = async (matchId: number) => {
+    const res = await fetch("/api/events/suggest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ matchId }),
+      credentials: "include",
+    });
+
+    if (!res.ok) {
+      throw new Error("Failed to get event suggestions");
+    }
+
+    return res.json();
+  };
+
   return {
     getSuggestions,
     craftMessage,
+    getEventSuggestions,
   };
 }
