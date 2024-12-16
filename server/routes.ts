@@ -20,7 +20,7 @@ export function registerRoutes(app: Express): Server {
     res.json({ success: true });
   });
 
-  // Get potential matches
+  // Get potential matches with compatibility scores
   app.get("/api/matches", async (req, res) => {
     if (!req.user) return res.status(401).send("Not authenticated");
 
@@ -29,10 +29,42 @@ export function registerRoutes(app: Express): Server {
       .where(and(
         ne(users.id, req.user.id),
         eq(users.quizCompleted, true)
-      ))
-      .limit(10);
+      ));
 
-    res.json(potentialMatches);
+    // Calculate compatibility scores
+    const currentUserTraits = req.user.personalityTraits || {};
+    const matchesWithScores = potentialMatches.map(match => {
+      const matchTraits = match.personalityTraits || {};
+      let compatibilityScore = 0;
+      let traitCount = 0;
+
+      // Compare each personality trait
+      for (const trait in currentUserTraits) {
+        if (matchTraits[trait] !== undefined) {
+          // Calculate similarity (1 - absolute difference)
+          const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
+          compatibilityScore += similarity;
+          traitCount++;
+        }
+      }
+
+      // Calculate percentage (if there are matching traits)
+      const score = traitCount > 0 
+        ? Math.round((compatibilityScore / traitCount) * 100)
+        : 0;
+
+      return {
+        ...match,
+        compatibilityScore: score
+      };
+    });
+
+    // Sort by compatibility score (highest first)
+    const sortedMatches = matchesWithScores.sort((a, b) => 
+      b.compatibilityScore - a.compatibilityScore
+    );
+
+    res.json(sortedMatches);
   });
 
   // Get chat messages

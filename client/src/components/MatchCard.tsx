@@ -5,11 +5,10 @@ import { Link } from "wouter";
 import type { User } from "@db/schema";
 
 interface MatchCardProps {
-  match: User;
-  similarityScore?: number;
+  match: User & { compatibilityScore: number };
 }
 
-export function MatchCard({ match, similarityScore }: MatchCardProps) {
+export function MatchCard({ match }: MatchCardProps) {
   return (
     <Card className="hover:shadow-lg transition-shadow">
       <CardHeader className="space-y-1">
