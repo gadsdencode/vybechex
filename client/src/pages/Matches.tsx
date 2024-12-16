@@ -1,14 +1,32 @@
 import { useMatches } from "../hooks/use-matches";
+import { useUser } from "../hooks/use-user";
 import { Loader2 } from "lucide-react";
+import { Link } from "wouter";
+import { Button } from "@/components/ui/button";
 import { MatchCard } from "../components/MatchCard";
 
 export default function Matches() {
+  const { user } = useUser();
   const { matches, isLoading } = useMatches();
 
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      </div>
+    );
+  }
+
+  if (!user?.quizCompleted) {
+    return (
+      <div className="max-w-4xl mx-auto text-center">
+        <h1 className="text-3xl font-bold mb-4">Complete Your Profile</h1>
+        <p className="text-muted-foreground mb-8">
+          Take our personality quiz to find compatible friends!
+        </p>
+        <Button asChild>
+          <Link href="/quiz">Take the Quiz</Link>
+        </Button>
       </div>
     );
   }

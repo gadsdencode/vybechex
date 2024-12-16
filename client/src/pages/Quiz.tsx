@@ -74,6 +74,11 @@ export default function Quiz() {
         });
 
         if (!res.ok) throw new Error("Failed to submit quiz");
+        
+        const data = await res.json();
+        
+        // Invalidate the user query to refresh the quiz completion status
+        queryClient.invalidateQueries({ queryKey: ["/api/user"] });
 
         toast({
           title: "Quiz completed!",

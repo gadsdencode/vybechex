@@ -13,11 +13,19 @@ export function registerRoutes(app: Express): Server {
     if (!req.user) return res.status(401).send("Not authenticated");
     const { traits } = req.body;
     
-    await db.update(users)
-      .set({ personalityTraits: traits, quizCompleted: true })
-      .where(eq(users.id, req.user.id));
+    const [updatedUser] = await db.update(users)
+      .set({ 
+        personalityTraits: traits, 
+        quizCompleted: true 
+      })
+      .where(eq(users.id, req.user.id))
+      .returning();
 
-    res.json({ success: true });
+    // Send back updated user data
+    res.json({ 
+      success: true,
+      user: updatedUser
+    });
   });
 
   // Get potential matches with compatibility scores
