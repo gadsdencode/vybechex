@@ -29,19 +29,23 @@ export function useChat() {
 
   const getEventSuggestions = async (matchId: number) => {
     try {
+      console.log("Fetching event suggestions for matchId:", matchId);
       const res = await fetch(`/api/event-suggestions/${matchId}`, {
         credentials: "include",
       });
 
       if (!res.ok) {
         const errorText = await res.text();
+        console.error("Event suggestions API error:", errorText);
         throw new Error(errorText || "Failed to get event suggestions");
       }
 
       const data = await res.json();
+      console.log("Received event suggestions:", data);
       return data;
     } catch (error) {
       console.error("Error fetching event suggestions:", error);
+      // Return fallback suggestions in the exact same format as the API
       return {
         suggestions: [
           {
