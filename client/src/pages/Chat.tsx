@@ -1,5 +1,7 @@
 import { useState } from "react";
 import { useRoute } from "wouter";
+import { useState, useEffect, useRef } from "react";
+import type { Message } from "@db/schema";
 import { useMatches } from "../hooks/use-matches";
 import { useChat } from "../hooks/use-chat";
 import { Button } from "@/components/ui/button";
@@ -22,22 +24,57 @@ export default function Chat() {
   const { getMessages, sendMessage } = useMatches();
   const { getSuggestions, craftMessage, getEventSuggestions } = useChat();
   const [newMessage, setNewMessage] = useState("");
-  const { data: messages = [], isLoading: isLoadingMessages } = useQuery({
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+
+  const scrollToBottom = () => {
+    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
+
+  const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[], Error>({
     queryKey: ['/api/messages', matchId],
     queryFn: () => getMessages(matchId),
-    refetchInterval: 3000, // Poll every 3 seconds for new messages
+    refetchInterval: (data) => {
+      if (!Array.isArray(data) || data.length === 0) return 10000;
+      const latestMessage = data[0];
+      const isRecent = (new Date().getTime() - new Date(latestMessage.createdAt).getTime()) < 30000;
+      return (latestMessage.senderId === user?.id || isRecent) ? 30000 : 10000;
+    },
+    refetchIntervalInBackground: false,
+    refetchOnWindowFocus: true,
+    staleTime: 10000,
+    select: (data) => {
+      return [...data].sort((a, b) => {
+        const dateA = new Date(b.createdAt || 0).getTime();
+        const dateB = new Date(a.createdAt || 0).getTime();
+        return dateA - dateB;
+      });
+    },
+    structuralSharing: false,
+    retry: (failureCount, error) => {
+      // Only retry network-related errors, not auth or validation errors
+      if (error instanceof Error && error.message.includes('Failed to fetch')) {
+        return failureCount < 3;
+      }
+      return false;
+    },
   });
 
-  const { data: chatSuggestions = { suggestions: [] }, isLoading: isLoadingSuggestions } = useQuery({
+  const { data: chatSuggestions = { suggestions: [] }, isLoading: isLoadingSuggestions } = useQuery<{ suggestions: string[] }, Error>({
     queryKey: ['/api/suggest', matchId],
     queryFn: () => getSuggestions(matchId),
     staleTime: 30000, // Suggestions valid for 30 seconds
+    retry: false,
   });
 
-  const { data: eventSuggestionsData = { suggestions: [] }, isLoading: isLoadingEvents } = useQuery({
+  const { data: eventSuggestionsData = { suggestions: [] }, isLoading: isLoadingEvents } = useQuery<{ suggestions: string[] }, Error>({
     queryKey: ['/api/events/suggest', matchId],
     queryFn: () => getEventSuggestions(matchId),
     staleTime: 60000, // Event suggestions valid for 1 minute
+    retry: false,
   });
 
   const isLoading = isLoadingMessages || isLoadingSuggestions || isLoadingEvents;
@@ -47,21 +84,77 @@ export default function Chat() {
   const queryClient = useQueryClient();
   const { toast } = useToast();
 
-  const sendMessageMutation = useMutation({
+  type MutationContext = {
+    previousMessages: Message[];
+    optimisticMessage: Message;
+  };
+  
+  const sendMessageMutation = useMutation<
+    Message,
+    Error,
+    { matchId: number; content: string },
+    MutationContext
+  >({
     mutationFn: sendMessage,
-    onSuccess: () => {
-      // Invalidate and refetch messages
-      queryClient.invalidateQueries({ queryKey: ['/api/messages', matchId] });
-      // Invalidate suggestions as conversation context has changed
-      queryClient.invalidateQueries({ queryKey: ['/api/suggest', matchId] });
+    onMutate: async ({ matchId, content }) => {
+      // Cancel any outgoing refetches
+      await queryClient.cancelQueries({ queryKey: ['/api/messages', matchId] });
+
+      // Snapshot the previous value
+      const previousMessages = queryClient.getQueryData<Message[]>(['/api/messages', matchId]) || [];
+
+      // Create optimistic message
+      const optimisticMessage: Message = {
+        id: Date.now(),
+        matchId,
+        senderId: user?.id || 0,
+        content: content.trim(),
+        createdAt: new Date(),
+        analyzed: false,
+        sentiment: null
+      };
+
+      // Optimistically update to the new value
+      queryClient.setQueryData<Message[]>(
+        ['/api/messages', matchId],
+        (old = []) => [optimisticMessage, ...old]
+      );
+
+      // Clear input immediately for better UX
       setNewMessage("");
+
+      return { previousMessages, optimisticMessage };
     },
-    onError: (error: Error) => {
+    onSuccess: (newMessage, variables, context) => {
+      if (!context) return;
+
+      queryClient.setQueryData<Message[]>(
+        ['/api/messages', variables.matchId],
+        (old = []) => {
+          // Remove optimistic message and add real one
+          const messages = old.filter(msg => msg.id !== context.optimisticMessage.id);
+          return [newMessage, ...messages];
+        }
+      );
+
+      // Invalidate suggestions to get fresh ones based on new message
+      queryClient.invalidateQueries({ queryKey: ['/api/suggest', variables.matchId] });
+    },
+    onError: (error: unknown, variables, context) => {
+      // Revert optimistic update
+      if (context?.previousMessages) {
+        queryClient.setQueryData(['/api/messages', matchId], context.previousMessages);
+      }
+      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
       toast({
-        title: "Failed to send message",
-        description: error.message,
+        title: "Error",
+        description: errorMessage,
         variant: "destructive",
       });
+    },
+    onSettled: () => {
+      // Always refetch after error or success to ensure consistency
+      queryClient.invalidateQueries({ queryKey: ['/api/messages', matchId] });
     },
   });
 
@@ -78,7 +171,8 @@ export default function Chat() {
   
 
 
-  if (isLoading) {
+  // Only show full loading state on initial load with no messages
+  if (isLoading && (!messages || messages.length === 0)) {
     return (
       <div className="flex items-center justify-center min-h-[50vh]">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />
@@ -86,21 +180,41 @@ export default function Chat() {
     );
   }
 
+  // Show a subtle loading indicator during background refreshes
+  const LoadingIndicator = () => (
+    isLoading ? (
+      <div className="absolute top-2 right-2">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground opacity-50" />
+      </div>
+    ) : null
+  );
+
   return (
     <div className="max-w-2xl mx-auto">
-      <div className="flex flex-col-reverse gap-4 mb-6 h-[60vh] overflow-y-auto p-4">
-        {messages.map((message) => (
-          <Card
-            key={message.id}
-            className={`p-4 max-w-[80%] ${
-              message.senderId === user?.id
-                ? "ml-auto bg-primary text-primary-foreground"
-                : "mr-auto"
-            }`}
-          >
-            {message.content}
-          </Card>
-        ))}
+      <div className="relative flex flex-col-reverse mb-6 h-[60vh] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
+        <LoadingIndicator />
+        <div ref={messagesEndRef} />
+        {messages.map((message) => {
+          const isCurrentUser = message.senderId === user?.id;
+          return (
+            <div
+              key={message.id}
+              className={`flex ${isCurrentUser ? 'justify-end' : 'justify-start'} w-full mb-4 last:mb-0`}
+            >
+              <Card
+                className={`p-4 max-w-[80%] ${
+                  isCurrentUser
+                    ? "bg-primary text-primary-foreground shadow-md"
+                    : "bg-card shadow"
+                }`}
+              >
+                <div className="whitespace-pre-wrap break-words">
+                  {message.content}
+                </div>
+              </Card>
+            </div>
+          );
+        })}
       </div>
 
       <form onSubmit={handleSend} className="flex gap-4">

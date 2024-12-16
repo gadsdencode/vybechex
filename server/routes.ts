@@ -3,7 +3,7 @@ import { createServer, type Server } from "http";
 import { setupAuth } from "./auth.js";
 import { db } from "@db";
 import { matches, messages, users } from "@db/schema";
-import { and, eq, ne, desc } from "drizzle-orm";
+import { and, eq, ne, desc, or } from "drizzle-orm";
 import { crypto } from "./auth.js";
 import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
 

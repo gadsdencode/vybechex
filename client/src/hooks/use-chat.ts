@@ -1,7 +1,7 @@
 import { useQuery, useMutation } from "@tanstack/react-query";
 
 export function useChat() {
-  const getSuggestions = async (matchId: number) => {
+  const getSuggestions = async (matchId: number): Promise<{ suggestions: string[] }> => {
     const res = await fetch("/api/suggest", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -10,7 +10,8 @@ export function useChat() {
     });
 
     if (!res.ok) {
-      throw new Error("Failed to get suggestions");
+      const error = await res.text();
+      throw new Error(error || "Failed to get suggestions");
     }
 
     return res.json();
