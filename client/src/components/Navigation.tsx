@@ -1,7 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useUser } from "../hooks/use-user";
 import { Button } from "@/components/ui/button";
-import { Home, Users, MessageSquare, LogOut } from "lucide-react";
+import { Home, Users, MessageSquare, LogOut, UsersRound } from "lucide-react";
 
 export default function Navigation() {
   const [location] = useLocation();
@@ -36,6 +36,17 @@ export default function Navigation() {
                 <Link href="/matches">
                   <Users className="h-4 w-4 mr-2" />
                   Matches
+                </Link>
+              </Button>
+
+              <Button
+                variant={location === "/groups" ? "default" : "ghost"}
+                size="sm"
+                asChild
+              >
+                <Link href="/groups">
+                  <UsersRound className="h-4 w-4 mr-2" />
+                  Groups
                 </Link>
               </Button>
             </div>
