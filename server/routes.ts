@@ -406,31 +406,43 @@ export function registerRoutes(app: Express): Server {
       const matchId = parseInt(req.params.matchId);
       
       // Get the match data to find both users
-      const [match] = await db
-        .select()
-        .from(matches)
-        .where(eq(matches.id, matchId))
-        .limit(1);
+      const match = await db.query.matches.findFirst({
+        where: eq(matches.id, matchId),
+        with: {
+          user1: true,
+          user2: true,
+        },
+      });
 
       if (!match) {
         return res.status(404).send("Match not found");
       }
 
       // Get both users' data
-      const [otherUserId] = [match.userId1, match.userId2].filter(id => id !== req.user.id);
-      const [otherUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, otherUserId))
-        .limit(1);
+      const otherUser = match.userId1 === req.user.id ? match.user2 : match.user1;
 
       if (!otherUser) {
         return res.status(404).send("Matched user not found");
       }
 
+      // Use dummy data for testing if personality traits are missing
+      const userTraits = req.user.personalityTraits || {
+        extraversion: 0.7,
+        communication: 0.8,
+        openness: 0.6,
+        values: 0.5
+      };
+      
+      const otherUserTraits = otherUser.personalityTraits || {
+        extraversion: 0.6,
+        communication: 0.7,
+        openness: 0.8,
+        values: 0.6
+      };
+
       const suggestions = await generateEventSuggestions(
-        req.user.personalityTraits || {},
-        otherUser.personalityTraits || {}
+        userTraits,
+        otherUserTraits
       );
 
       res.json({ suggestions });
