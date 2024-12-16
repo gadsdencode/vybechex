@@ -3,6 +3,7 @@ import { useLocation } from "wouter";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 
 const questions = [
   {
@@ -48,6 +49,7 @@ export default function Quiz() {
   const [answers, setAnswers] = useState<Record<string, number>>({});
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const handleAnswer = async (questionId: number, answerIndex: number) => {
     const question = questions.find(q => q.id === questionId);
