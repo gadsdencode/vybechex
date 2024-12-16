@@ -162,11 +162,11 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get AI conversation suggestions
-  app.post("/api/suggest", async (req, res) => {
+  app.get("/api/suggest/:matchId", async (req, res) => {
     if (!req.user) return res.status(401).send("Not authenticated");
     
     try {
-      const { matchId } = req.body;
+      const matchId = parseInt(req.params.matchId);
       
       const [match] = await db
         .select()
@@ -204,11 +204,11 @@ export function registerRoutes(app: Express): Server {
         req.user.id
       );
 
+      console.log("Generated conversation suggestions:", suggestions);
       res.json({ suggestions });
     } catch (error) {
       console.error("Error generating suggestions:", error);
       res.status(500).json({ 
-        message: "Failed to generate suggestions",
         suggestions: [
           "Tell me more about your interests!",
           "What do you like to do for fun?",
@@ -219,11 +219,16 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Craft a message from a suggestion
-  app.post("/api/craft-message", async (req, res) => {
+  app.post("/api/craft-message/:matchId", async (req, res) => {
     if (!req.user) return res.status(401).send("Not authenticated");
     
     try {
-      const { suggestion, matchId } = req.body;
+      const matchId = parseInt(req.params.matchId);
+      const { suggestion } = req.body;
+
+      if (!suggestion) {
+        return res.status(400).send("Suggestion is required");
+      }
       
       const [match] = await db
         .select()
@@ -252,12 +257,12 @@ export function registerRoutes(app: Express): Server {
         otherUser.personalityTraits || {}
       );
 
+      console.log("Crafted message:", craftedMessage);
       res.json({ message: craftedMessage });
     } catch (error) {
       console.error("Error crafting message:", error);
       res.status(500).json({ 
-        success: false,
-        message: "Failed to craft message"
+        message: suggestion
       });
     }
   });

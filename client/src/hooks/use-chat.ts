@@ -3,27 +3,29 @@ import { useQuery, useMutation } from "@tanstack/react-query";
 export function useChat() {
   const getSuggestions = async (matchId: number) => {
     try {
-      const res = await fetch("/api/suggest", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchId }),
+      console.log("Fetching suggestions for matchId:", matchId);
+      const res = await fetch(`/api/suggest/${matchId}`, {
         credentials: "include",
       });
 
       if (!res.ok) {
         const errorText = await res.text();
+        console.error("Suggestions API error:", errorText);
         throw new Error(errorText || "Failed to get suggestions");
       }
 
       const data = await res.json();
+      console.log("Received suggestions:", data);
       return data;
     } catch (error) {
       console.error("Error getting suggestions:", error);
-      return { suggestions: [
-        "Tell me more about your interests!",
-        "What do you like to do for fun?",
-        "Have you traveled anywhere interesting lately?"
-      ]};
+      return {
+        suggestions: [
+          "Tell me more about your interests!",
+          "What do you like to do for fun?",
+          "Have you traveled anywhere interesting lately?"
+        ]
+      };
     }
   };
 
@@ -69,18 +71,28 @@ export function useChat() {
   };
 
   const craftMessage = async (matchId: number, suggestion: string) => {
-    const res = await fetch("/api/craft-message", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ matchId, suggestion }),
-      credentials: "include",
-    });
+    try {
+      console.log("Crafting message for suggestion:", suggestion);
+      const res = await fetch(`/api/craft-message/${matchId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ suggestion }),
+        credentials: "include",
+      });
 
-    if (!res.ok) {
-      throw new Error("Failed to craft message");
+      if (!res.ok) {
+        const errorText = await res.text();
+        console.error("Craft message API error:", errorText);
+        throw new Error(errorText || "Failed to craft message");
+      }
+
+      const data = await res.json();
+      console.log("Received crafted message:", data);
+      return data;
+    } catch (error) {
+      console.error("Error crafting message:", error);
+      return { message: suggestion };
     }
-
-    return res.json();
   };
 
   return {
