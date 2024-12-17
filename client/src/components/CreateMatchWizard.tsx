@@ -82,13 +82,27 @@ export default function CreateMatchWizard({ onComplete, onCancel }: CreateMatchW
 
   const onSubmit = async (data: WizardFormData) => {
     try {
-      // TODO: Implement match creation with compatibility calculation
+      if (!user) {
+        throw new Error("You must be logged in to create a match");
+      }
+
+      // Calculate compatibility score based on interests
+      const userTraits = data.interests;
+      const compatibilityScore = Object.values(userTraits).reduce((sum, val) => sum + val, 0) / Object.keys(userTraits).length;
+
+      // Create the match
+      await connect({
+        id: initialMatchId || '',
+        score: Math.round(compatibilityScore * 100)
+      });
+
       toast({
         title: "Match Created!",
         description: "Your match preferences have been saved.",
       });
       onComplete();
     } catch (error) {
+      console.error('Error creating match:', error);
       toast({
         title: "Error",
         description: error instanceof Error ? error.message : "Failed to create match",

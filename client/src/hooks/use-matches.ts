@@ -43,14 +43,18 @@ export function useMatches() {
   });
 
   const connect = useMutation({
-    mutationFn: async ({ id }: { id: string }) => {
-      const response = await fetch(`/api/matches/${id}/connect`, {
+    mutationFn: async ({ id, score }: { id: string, score?: number }) => {
+      const response = await fetch('/api/matches', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        credentials: 'include'
+        credentials: 'include',
+        body: JSON.stringify({ 
+          userId2: parseInt(id),
+          score: score || 0
+        })
       });
 
       if (!response.ok) {
