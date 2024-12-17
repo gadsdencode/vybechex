@@ -73,3 +73,7 @@ export type Match = typeof matches.$inferSelect;
 export type NewMatch = typeof matches.$inferInsert;
 export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
+
+// Export schema types for auth
+export type SelectUser = User;
+export type InsertUser = NewUser;
