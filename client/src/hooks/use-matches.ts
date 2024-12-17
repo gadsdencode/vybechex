@@ -44,24 +44,40 @@ export function useMatches() {
 
   const connect = useMutation({
     mutationFn: async ({ id, score }: { id: string, score?: number }) => {
-      const response = await fetch('/api/matches', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Accept': 'application/json'
-        },
-        credentials: 'include',
-        body: JSON.stringify({ 
-          userId2: parseInt(id),
-          score: score || 0
-        })
-      });
+      try {
+        // First check if match already exists
+        const checkResponse = await fetch(`/api/matches/${id}`, {
+          credentials: 'include'
+        });
+        
+        if (checkResponse.ok) {
+          // Match exists, return it
+          return checkResponse.json();
+        }
+        
+        // If match doesn't exist, create it
+        const response = await fetch('/api/matches', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json'
+          },
+          credentials: 'include',
+          body: JSON.stringify({ 
+            userId2: parseInt(id),
+            score: score || 0
+          })
+        });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to connect');
+        if (!response.ok) {
+          const data = await response.json();
+          throw new Error(data.message || 'Failed to connect');
+        }
+        return response.json();
+      } catch (error) {
+        console.error('Error in connect mutation:', error);
+        throw error;
       }
-      return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
@@ -173,12 +189,15 @@ export function useMatches() {
       const data = await response.json();
       
       if (!response.ok) {
-        if (response.status === 404) {
-            // If match not found, redirect to match creation wizard
-            window.location.href = `/matches/create?id=${id}`;
-            throw new Error('Redirecting to match creation wizard');
-          }
-        throw new Error(data.message || 'Failed to fetch match');
+        const errorData = data.message || 'Failed to fetch match';
+        
+        // Only redirect to creation wizard if match truly doesn't exist
+        if (response.status === 404 && !errorData.includes('already exists')) {
+          window.location.href = `/matches/create?id=${id}`;
+          throw new Error('Redirecting to match creation wizard');
+        }
+        
+        throw new Error(errorData);
       }
 
       return data;
