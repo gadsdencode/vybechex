@@ -87,28 +87,45 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
         throw new Error("You must be logged in to create a match");
       }
 
+      if (!initialMatchId) {
+        throw new Error("No match ID provided");
+      }
+
       // Calculate compatibility score based on interests
       const userTraits = data.interests;
       const compatibilityScore = Object.values(userTraits).reduce((sum, val) => sum + val, 0) / Object.keys(userTraits).length;
 
-      // Create the match
-      await connect({
-        id: initialMatchId || '',
+      // Create the match with calculated score
+      const match = await connect({
+        id: initialMatchId,
         score: Math.round(compatibilityScore * 100)
       });
 
-      toast({
-        title: "Match Created!",
-        description: "Your match preferences have been saved.",
-      });
-      onComplete();
-    } catch (error) {
+      if (match) {
+        toast({
+          title: "Match Created!",
+          description: "Your match preferences have been saved.",
+        });
+        onComplete();
+      }
+    } catch (error: any) {
       console.error('Error creating match:', error);
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to create match",
-        variant: "destructive",
-      });
+      
+      // Handle specific error cases
+      if (error.message.includes('already exists')) {
+        toast({
+          title: "Match Exists",
+          description: "You already have a match with this user.",
+          variant: "default",
+        });
+        onComplete(); // Redirect to matches page
+      } else {
+        toast({
+          title: "Error",
+          description: error.message || "Failed to create match",
+          variant: "destructive",
+        });
+      }
     }
   };
 
