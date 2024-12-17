@@ -170,14 +170,10 @@ export function useMatches() {
       
       if (!response.ok) {
         if (response.status === 404) {
-          // If match not found, try to create it
-          const newMatch = await connect({ id });
-          if (newMatch) {
-            // Retry fetching the newly created match
-            return getMatch(id);
+            // If match not found, redirect to match creation wizard
+            window.location.href = `/matches/create?id=${id}`;
+            throw new Error('Redirecting to match creation wizard');
           }
-          throw new Error('Failed to create match');
-        }
         throw new Error(data.message || 'Failed to fetch match');
       }
 
