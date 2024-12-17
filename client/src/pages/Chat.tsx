@@ -1,6 +1,6 @@
 import { useRoute, useLocation } from "wouter";
 import { useState, useEffect, useRef } from "react";
-import type { Message } from "@db/schema";
+import type { Message, User } from "@db/schema";
 import { useMatches } from "../hooks/use-matches";
 import { useChat, EventSuggestion } from "../hooks/use-chat";
 import type { SuggestionResponse, EventSuggestionResponse, Suggestion } from "../hooks/use-chat";
@@ -9,7 +9,7 @@ import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Loader2, Send, Lightbulb, Calendar } from "lucide-react";
 import { useUser } from "../hooks/use-user";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, Query } from "@tanstack/react-query";
 import type { QueryKey } from "@tanstack/react-query";
 import type { Match } from "../hooks/use-matches";
 import { useToast } from "@/hooks/use-toast";
@@ -49,26 +49,22 @@ export default function Chat() {
   // Only fetch messages if match exists and is accepted
   const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[], Error>({
     queryKey: ['messages', matchId] as QueryKey,
-    queryFn: () => getMessages(matchId!.toString()),
-    enabled: !!matchId && match?.status === 'accepted',
-    refetchInterval: (query) => {
-      if (!matchId || match?.status !== 'accepted') return false;
-      const data = query.state.data;
-      if (!Array.isArray(data)) return 10000;
-      
-      const latestMessage = data[data.length - 1];
-      if (!latestMessage || !latestMessage.createdAt) return 15000;
-      
-      // Only refetch if the latest message is from the other user
-      if (latestMessage.senderId !== user?.id) {
-        const messageAge = Date.now() - new Date(latestMessage.createdAt).getTime();
-        return messageAge < 30000 ? 5000 : 15000;
-      }
-      return 15000;
+    queryFn: () => {
+      if (!matchId) throw new Error('No match ID provided');
+      return getMessages(matchId.toString());
     },
-    refetchOnWindowFocus: true,
-    placeholderData: (previousData) => previousData,
-    staleTime: 5000,
+    enabled: !!matchId && match?.status === 'accepted',
+    retry: (failureCount, error) => {
+      if (error.message.includes('Not authenticated') || error.message.includes('Not authorized')) {
+        return false;
+      }
+      return failureCount < 3;
+    },
+    refetchInterval: 3000, // Poll every 3 seconds
+    refetchIntervalInBackground: true,
+    staleTime: 1000, // Consider data fresh for 1 second
+    gcTime: 1000 * 60 * 5, // Cache for 5 minutes
+    refetchOnWindowFocus: false,
   });
 
   // Scroll to bottom when new messages arrive
@@ -88,14 +84,16 @@ export default function Chat() {
   const { data: chatSuggestions, isLoading: isLoadingSuggestions } = useQuery<SuggestionResponse>({
     queryKey: ['suggest', matchId] as QueryKey,
     queryFn: () => getSuggestions(matchId!),
-    staleTime: 60000,
+    enabled: !!matchId && match?.status === 'accepted',
+    staleTime: 60000, // Consider suggestions fresh for 1 minute
+    gcTime: 1000 * 60 * 5, // Cache for 5 minutes
     retry: (failureCount, error: Error) => {
       if (error.message.includes('Unauthorized') || error.message.includes('Session expired')) {
         return false;
       }
       return failureCount < 3;
     },
-    enabled: !!matchId && match?.status === 'accepted',
+    refetchOnWindowFocus: false,
   });
 
   const { data: eventSuggestionsData = { suggestions: [] }, isLoading: isLoadingEvents } = useQuery<EventSuggestionResponse>({
@@ -135,73 +133,32 @@ export default function Chat() {
     sendMessageMutation.mutate(newMessage.trim());
   };
 
-  if (!matchId) {
-    return (
-      <div className="flex items-center justify-center h-[80vh]">
-        <p>Please return to your matches</p>
-      </div>
-    );
+  if (isLoadingMatch) {
+    return <div className="flex items-center justify-center h-screen"><Loader2 className="animate-spin" /></div>;
   }
 
-  if (isLoadingMatch) {
+  if (matchError) {
     return (
-      <div className="flex items-center justify-center h-[80vh]">
-        <Loader2 className="h-8 w-8 animate-spin" />
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <p className="text-red-500">Error loading match: {matchError.message}</p>
+        <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
       </div>
     );
   }
 
   if (!match) {
     return (
-      <div className="flex items-center justify-center h-[80vh] flex-col gap-4">
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
         <p>Match not found</p>
         <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
       </div>
     );
   }
 
-  if (match.status === 'pending') {
+  if (match.status !== 'accepted') {
     return (
-      <div className="flex items-center justify-center h-[80vh] flex-col gap-4">
-        <p>This match is pending acceptance</p>
-        <div className="flex gap-2">
-          <Button onClick={async () => {
-            try {
-              await fetch(`/api/matches/${matchId}`, {
-                method: 'PATCH',
-                headers: {
-                  'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ status: 'accepted' }),
-                credentials: 'include',
-              });
-              queryClient.invalidateQueries({ queryKey: ['matches', matchId] });
-              toast({
-                title: "Match accepted!",
-                description: "You can now start chatting.",
-              });
-            } catch (error) {
-              toast({
-                title: "Error",
-                description: "Failed to accept match",
-                variant: "destructive",
-              });
-            }
-          }}>
-            Accept Match
-          </Button>
-          <Button variant="outline" onClick={() => setLocation('/matches')}>
-            Return to Matches
-          </Button>
-        </div>
-      </div>
-    );
-  }
-
-  if (match.status === 'rejected') {
-    return (
-      <div className="flex items-center justify-center h-[80vh] flex-col gap-4">
-        <p>This match has been rejected</p>
+      <div className="flex flex-col items-center justify-center h-screen gap-4">
+        <p>This match must be accepted before you can chat</p>
         <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
       </div>
     );
@@ -231,7 +188,7 @@ export default function Chat() {
         <LoadingIndicator />
         <div ref={messagesEndRef} />
         {messages.map((message) => {
-          const isCurrentUser = message.senderId === user?.id;
+          const isCurrentUser = message.senderId === (user as { id: number })?.id;
           return (
             <div
               key={message.id}

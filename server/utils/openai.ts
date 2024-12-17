@@ -1,33 +1,29 @@
+import OpenAI from "openai";
 import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 const OPENAI_API_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+
+const openaiClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 export async function getChatCompletion(messages: ChatCompletionMessageParam[]) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set");
   }
 
-  const response = await fetch(OPENAI_API_ENDPOINT, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
+  try {
+    const completion = await openaiClient.chat.completions.create({
       model: "gpt-3.5-turbo",
       messages,
       temperature: 0.7,
       max_tokens: 150,
-    }),
-  });
+    });
 
-  if (!response.ok) {
-    const error = await response.text();
+    return completion.choices[0].message.content;
+  } catch (error) {
     throw new Error(`OpenAI API error: ${error}`);
   }
-
-  const data = await response.json();
-  return data.choices[0].message.content;
 }
 
 export async function craftMessageFromSuggestion(
@@ -59,7 +55,7 @@ export async function craftMessageFromSuggestion(
 
   try {
     const response = await getChatCompletion(messages);
-    return response.replace(/^["']|["']$/g, ''); // Remove any quotes if present
+    return response!.replace(/^["']|["']$/g, ''); // Remove any quotes if present
   } catch (error) {
     console.error("Error crafting message:", error);
     return suggestion; // Fallback to original suggestion if API fails
@@ -108,7 +104,7 @@ export async function generateConversationSuggestions(
   try {
     const completion = await getChatCompletion(messages);
     // Split the completion into individual suggestions and clean them up
-    const suggestions = completion
+    const suggestions = completion!
       .split(/\d\./)
       .filter(Boolean)
       .map((s: string) => s.trim())
@@ -154,7 +150,7 @@ export async function generateEventSuggestions(
 
   try {
     const completion = await getChatCompletion(messages);
-    const suggestions = completion
+    const suggestions = completion!
       .split(/\d\./)
       .filter(Boolean)
       .map((s: string) => ({

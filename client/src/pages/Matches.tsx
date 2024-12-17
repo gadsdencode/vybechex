@@ -22,10 +22,16 @@ export default function Matches() {
   const cardsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!isLoading && matches && matches.length > 0) {
+    // Only proceed if we have matches and all refs are available
+    if (!isLoading && 
+        matches?.length > 0 && 
+        headerRef.current && 
+        networkRef.current && 
+        cardsRef.current) {
+      
       const ctx = gsap.context(() => {
         // Ensure initial visibility
-        gsap.set([headerRef.current, networkRef.current, cardsRef.current?.children || []], {
+        gsap.set([headerRef.current, networkRef.current, cardsRef.current.children], {
           autoAlpha: 1
         });
 
@@ -45,7 +51,7 @@ export default function Matches() {
         });
 
         // Animate cards
-        gsap.from(cardsRef.current?.children || [], {
+        gsap.from(cardsRef.current.children, {
           autoAlpha: 0,
           y: 20,
           duration: 0.5,
@@ -54,6 +60,7 @@ export default function Matches() {
         });
       });
 
+      // Cleanup function
       return () => ctx.revert();
     }
   }, [isLoading, matches]);

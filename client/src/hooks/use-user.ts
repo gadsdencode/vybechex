@@ -1,3 +1,5 @@
+// //src/hooks/use-user.ts
+
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { User } from "@db/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -54,6 +56,10 @@ export function useUser() {
         return null;
       }
     },
+    staleTime: 30000, // Data stays fresh for 30 seconds
+    gcTime: 1000 * 60 * 5, // Cache data for 5 minutes
+    refetchOnWindowFocus: false, // Prevent refetch on window focus
+    retry: false // Don't retry on failure
   });
 
   const loginMutation = useMutation({

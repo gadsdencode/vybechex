@@ -1,6 +1,8 @@
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { useUser } from "@/hooks/use-user";
 import { useMatches } from "@/hooks/use-matches";
+import type { User } from "@db/schema";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -26,6 +28,10 @@ import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, ArrowRight, Heart } from "lucide-react";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { Loader2 } from "lucide-react";
+import { Alert, AlertTitle, AlertDescription } from "@/components/ui/alert";
+import { useLocation } from "wouter";
 
 const interestFields = [
   'extraversion',
@@ -54,12 +60,37 @@ interface CreateMatchWizardProps {
   onCancel: () => void;
 }
 
+type PersonalityTraits = {
+  extraversion: number;
+  communication: number;
+  openness: number;
+  values: number;
+  planning: number;
+  sociability: number;
+};
+
 export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel }: CreateMatchWizardProps) {
   const [step, setStep] = useState(1);
   const { user } = useUser();
   const { connect } = useMatches();
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   const totalSteps = 3;
+
+  const { data: potentialMatch } = useQuery({
+    queryKey: ['potential-match', initialMatchId],
+    queryFn: async () => {
+      const response = await fetch(`/api/users/${initialMatchId}`, {
+        credentials: 'include'
+      });
+      if (!response.ok) {
+        throw new Error('Failed to fetch potential match');
+      }
+      return response.json();
+    },
+    enabled: !!initialMatchId && step > 1,
+    staleTime: 30000,
+  });
 
   const form = useForm<WizardFormData>({
     resolver: zodResolver(wizardSchema),
@@ -73,13 +104,35 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
         sociability: 0.5,
       },
     },
+    mode: 'onChange',
   });
 
   const progress = (step / totalSteps) * 100;
 
+  const calculateCompatibility = () => {
+    if (!potentialMatch?.personalityTraits || !form.getValues().interests) {
+      return 0;
+    }
+
+    const userTraits = form.getValues().interests;
+    const matchTraits = potentialMatch.personalityTraits;
+    let score = 0;
+    let count = 0;
+
+    const traits = Object.keys(userTraits) as Array<keyof PersonalityTraits>;
+    for (const trait of traits) {
+      if (matchTraits[trait] !== undefined) {
+        const similarity = 1 - Math.abs(userTraits[trait] - matchTraits[trait]);
+        score += similarity;
+        count++;
+      }
+    }
+
+    return Math.round((score / count) * 100);
+  };
+
   const handleNavigateNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    e.stopPropagation();
     if (step < totalSteps) {
       setStep(prev => prev + 1);
     }
@@ -87,14 +140,12 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
 
   const handleNavigateBack = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
-    e.stopPropagation();
     if (step > 1) {
       setStep(prev => prev - 1);
     }
   };
 
   const handleFormSubmit = async (data: WizardFormData) => {
-    // Only process form submission on the final step
     if (step !== totalSteps) {
       return;
     }
@@ -111,18 +162,16 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
       const userTraits = data.interests;
       const compatibilityScore = Object.values(userTraits).reduce((sum, val) => sum + val, 0) / Object.keys(userTraits).length;
 
-      const match = await connect({
+      const response = await connect({
         id: initialMatchId,
         score: Math.round(compatibilityScore * 100)
       });
 
-      if (match) {
-        toast({
-          title: "Match Created!",
-          description: "Your match preferences have been saved.",
-        });
-        onComplete();
+      if (response.status === 'accepted') {
+        setLocation(`/chat/${initialMatchId}`);
       }
+      
+      onComplete();
     } catch (error: any) {
       console.error('Error creating match:', error);
       
@@ -132,7 +181,15 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
           description: "You already have a match with this user.",
           variant: "default",
         });
+        setLocation(`/chat/${initialMatchId}`);
         onComplete();
+      } else if (error.message.includes('not found')) {
+        toast({
+          title: "User Not Found",
+          description: "This user is no longer available for matching.",
+          variant: "destructive",
+        });
+        onCancel();
       } else {
         toast({
           title: "Error",
@@ -154,24 +211,7 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
       </CardHeader>
 
       <Form {...form}>
-        <form 
-          onSubmit={(e: React.FormEvent<HTMLFormElement>) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (step === totalSteps) {
-              void form.handleSubmit(handleFormSubmit)(e);
-            }
-          }}
-          onChange={(e: React.FormEvent<HTMLFormElement>) => {
-            e.preventDefault();
-            e.stopPropagation();
-            return false;
-          }}
-          onInput={(e: React.FormEvent<HTMLFormElement>) => {
-            e.preventDefault();
-            e.stopPropagation();
-          }}
-        >
+        <form onSubmit={form.handleSubmit(handleFormSubmit)}>
           <CardContent>
             {step === 1 && (
               <div className="space-y-4">
@@ -192,24 +232,7 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
                             value={[field.value]}
                             onValueChange={([newValue]) => {
                               if (typeof newValue === 'number' && !Number.isNaN(newValue)) {
-                                // Batch updates to prevent unnecessary rerenders
-                                requestAnimationFrame(() => {
-                                  // Update field value without validation
-                                  field.onChange(newValue);
-                                  // Silent form state update
-                                  form.setValue(`interests.${trait}`, newValue, {
-                                    shouldValidate: false,
-                                    shouldDirty: false,
-                                    shouldTouch: false,
-                                  });
-                                });
-                              }
-                            }}
-                            onValueCommit={([newValue]) => {
-                              if (typeof newValue === 'number' && !Number.isNaN(newValue)) {
-                                form.setValue(`interests.${trait}`, newValue, {
-                                  shouldValidate: false,
-                                });
+                                field.onChange(newValue);
                               }
                             }}
                           />
@@ -226,16 +249,83 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
             )}
 
             {step === 2 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Preview Potential Matches</h3>
-                {/* Preview content */}
+              <div className="space-y-6">
+                <h3 className="text-lg font-medium">Preview Your Potential Match</h3>
+                {potentialMatch ? (
+                  <div className="space-y-4">
+                    <div className="flex items-center space-x-4">
+                      <Avatar className="h-20 w-20">
+                        <AvatarImage src={potentialMatch.avatar || "/default-avatar.png"} alt={potentialMatch.name} />
+                        <AvatarFallback>{potentialMatch.name?.[0]}</AvatarFallback>
+                      </Avatar>
+                      <div>
+                        <h4 className="text-xl font-semibold">{potentialMatch.name}</h4>
+                        <p className="text-muted-foreground">{potentialMatch.bio || "No bio available"}</p>
+                      </div>
+                    </div>
+
+                    <div className="bg-muted p-4 rounded-lg">
+                      <h5 className="font-medium mb-2">Compatibility Score</h5>
+                      <div className="flex items-center space-x-2">
+                        <Progress value={calculateCompatibility()} className="flex-1" />
+                        <span className="text-sm font-medium">{calculateCompatibility()}%</span>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      {interestFields.map((trait) => (
+                        <div key={trait} className="bg-muted p-3 rounded-lg">
+                          <div className="text-sm font-medium mb-1">{formatTrait(trait)}</div>
+                          <div className="flex items-center space-x-2">
+                            <Progress 
+                              value={potentialMatch.personalityTraits[trait] * 100} 
+                              className="flex-1" 
+                            />
+                            <span className="text-xs">
+                              {Math.round(potentialMatch.personalityTraits[trait] * 100)}%
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-40">
+                    <Loader2 className="h-8 w-8 animate-spin text-primary" />
+                  </div>
+                )}
               </div>
             )}
 
             {step === 3 && (
-              <div className="space-y-4">
-                <h3 className="text-lg font-medium">Confirm Your Preferences</h3>
-                {/* Confirmation content */}
+              <div className="space-y-6">
+                <h3 className="text-lg font-medium">Confirm Your Match</h3>
+                {potentialMatch && (
+                  <div className="space-y-4">
+                    <Alert>
+                      <AlertTitle>You're about to connect with {potentialMatch.name}</AlertTitle>
+                      <AlertDescription>
+                        Based on your preferences, you have a {calculateCompatibility()}% compatibility match.
+                        This will create a new connection and allow you to start chatting.
+                      </AlertDescription>
+                    </Alert>
+
+                    <div className="bg-muted p-4 rounded-lg">
+                      <h4 className="font-medium mb-2">Your Selected Preferences</h4>
+                      <div className="grid grid-cols-2 gap-4">
+                        {interestFields.map((trait) => (
+                          <div key={trait} className="space-y-1">
+                            <div className="text-sm font-medium">{formatTrait(trait)}</div>
+                            <Progress 
+                              value={form.getValues().interests[trait] * 100} 
+                              className="h-2" 
+                            />
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
           </CardContent>
@@ -271,11 +361,11 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
 function getStepDescription(step: number): string {
   switch (step) {
     case 1:
-      return "Define your preferences";
+      return "Set Your Preferences";
     case 2:
-      return "Preview potential matches";
+      return "Preview Your Match";
     case 3:
-      return "Review and confirm";
+      return "Confirm Connection";
     default:
       return "";
   }

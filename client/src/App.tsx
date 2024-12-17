@@ -34,6 +34,12 @@ function App() {
           <Route path="/matches" component={Matches} />
           <Route path="/matches/create" component={CreateMatch} />
           <Route path="/chat/:id" component={Chat} />
+          <Route path="/matches/create/:id">
+            {(params) => {
+              window.location.href = `/chat/${params.id}`;
+              return null;
+            }}
+          </Route>
           <Route>404 - Not Found</Route>
         </Switch>
       </main>

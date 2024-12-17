@@ -1,3 +1,5 @@
+// / client/src/hooks/use-chat.ts
+
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "./use-toast";
 
@@ -26,24 +28,31 @@ export function useChat() {
     try {
       const response = await fetch("/api/suggest", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
         body: JSON.stringify({ matchId }),
         credentials: "include",
       });
 
-      const text = await response.text();
-      try {
-        const data = JSON.parse(text);
-        if (!response.ok) {
-          throw new Error(data.message || "Failed to get suggestions");
-        }
-        return data;
-      } catch (e) {
-        if (!response.ok) {
-          throw new Error("Failed to get suggestions");
-        }
-        throw e;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to get suggestions" }));
+        throw new Error(errorData.message || "Failed to get suggestions");
       }
+
+      const data = await response.json();
+      if (!data.suggestions || !Array.isArray(data.suggestions)) {
+        console.error("Invalid suggestion format:", data);
+        throw new Error("Invalid suggestion format received from server");
+      }
+
+      return {
+        suggestions: data.suggestions.map((suggestion: any) => ({
+          text: typeof suggestion === 'string' ? suggestion : suggestion.text,
+          confidence: suggestion.confidence || 1
+        }))
+      };
     } catch (error) {
       console.error("Error getting suggestions:", error);
       throw error;
