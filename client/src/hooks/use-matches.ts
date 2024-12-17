@@ -227,22 +227,92 @@ export function useMatches(): UseMatchesReturn {
 
   const getMatch = async (id: string): Promise<Match> => {
     try {
+      // Input validation
+      if (!id || id.trim() === '') {
+        throw new Error('Match ID is required');
+      }
+
+      // Validate ID format
+      const matchId = parseInt(id);
+      if (isNaN(matchId) || matchId.toString() !== id) {
+        throw new Error('Invalid match ID format. Must be a valid number.');
+      }
+
+      // Attempt to fetch the match
       const response = await fetch(`/api/matches/${id}`, {
         credentials: 'include',
         headers: {
+          'Content-Type': 'application/json',
           'Accept': 'application/json'
         }
       });
 
+      // Handle various HTTP error responses with detailed messages
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: 'Failed to fetch match' }));
-        throw new Error(errorData.message || 'Failed to fetch match');
+        const errorData = await response.json().catch(() => ({ 
+          message: 'Server returned an error without details' 
+        }));
+        
+        switch (response.status) {
+          case 401:
+            throw new Error(errorData.message || 'Authentication required. Please login to view this match.');
+          case 403:
+            throw new Error(errorData.message || 'You do not have permission to view this match.');
+          case 404:
+            throw new Error(errorData.message || 'Match not found. It may have been deleted or you may not have access.');
+          case 400:
+            throw new Error(errorData.message || 'Invalid match request. Please check the match ID.');
+          default:
+            throw new Error(errorData.message || `Failed to fetch match: ${response.statusText}`);
+        }
       }
 
-      return response.json();
+      // Parse and validate response data
+      const data = await response.json();
+      
+      // Comprehensive data validation
+      if (!data || typeof data !== 'object') {
+        throw new Error('Server returned invalid match data format');
+      }
+
+      // Validate required fields with specific error messages
+      const requiredFields = ['id', 'status', 'personalityTraits'] as const;
+      for (const field of requiredFields) {
+        if (!(field in data)) {
+          throw new Error(`Missing required field: ${field}`);
+        }
+      }
+
+      if (!data.personalityTraits || typeof data.personalityTraits !== 'object') {
+        throw new Error('Invalid personality traits data received');
+      }
+
+      // Transform the data into the expected format with proper typing
+      return {
+        ...data,
+        interests: Object.keys(data.personalityTraits)
+          .filter((trait): trait is keyof PersonalityTraits => 
+            trait in traitMapping && 
+            typeof data.personalityTraits[trait] === 'number'
+          )
+          .map(trait => ({
+            name: traitMapping[trait].name,
+            score: Math.round((data.personalityTraits[trait] || 0) * 100),
+            category: traitMapping[trait].category
+          }))
+          .sort((a, b) => b.score - a.score), // Sort by score descending
+        avatar: data.avatar || "/default-avatar.png",
+        compatibilityScore: typeof data.compatibilityScore === 'number' 
+          ? data.compatibilityScore 
+          : 0
+      };
     } catch (error) {
       console.error('Error fetching match:', error);
-      throw error;
+      // Ensure error is always an Error instance with a descriptive message
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'An unexpected error occurred while fetching the match';
+      throw new Error(errorMessage);
     }
   };
 

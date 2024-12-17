@@ -75,7 +75,7 @@ const Home: FC = () => {
     <main className="flex flex-col items-center text-center max-w-6xl mx-auto px-4 py-12">
       <section ref={heroRef} className="mb-16 relative overflow-hidden rounded-lg p-5 m-5">
         <h1 className="text-5xl md:text-7xl font-extrabold mb-6 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent animate-gradient relative z-10">
-          Welcome to VybeCheck
+          Welcome to VybeChex
         </h1>
         <p className="text-xl md:text-2xl text-muted-foreground max-w-3xl mx-auto relative z-10">
           Discover meaningful connections through our AI-powered matching system.

@@ -10,19 +10,6 @@ import { db } from "@db";
 import { eq } from "drizzle-orm";
 
 const scryptAsync = promisify(scrypt);
-
-import passport from "passport";
-import { IVerifyOptions, Strategy as LocalStrategy } from "passport-local";
-import { type Express } from "express";
-import session from "express-session";
-import createMemoryStore from "memorystore";
-import { scrypt, randomBytes, timingSafeEqual } from "crypto";
-import { promisify } from "util";
-import { users, insertUserSchema, type User as SelectUser } from "@db/schema";
-import { db } from "@db";
-import { eq } from "drizzle-orm";
-
-const scryptAsync = promisify(scrypt);
 export const crypto = {
   hash: async (password: string) => {
     const salt = randomBytes(16).toString("hex");

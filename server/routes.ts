@@ -6,6 +6,15 @@ import { setupAuth } from "./auth";
 import { users, matches, messages } from "@db/schema";
 import type { SelectUser } from "@db/schema";
 import type { InsertUser } from "@db/schema";
+import { db } from "@db";
+import { and, eq, ne, desc, or, sql } from "drizzle-orm";
+import { crypto } from "./auth.js";
+import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
+import OpenAI from "openai";
+
+const openaiClient = new OpenAI({
+  apiKey: process.env.OPENAI_API_KEY
+});
 
 // Extend Express Request type
 declare global {
@@ -16,15 +25,6 @@ declare global {
     }
   }
 }
-import { db } from "@db";
-import { and, eq, ne, desc, or, sql } from "drizzle-orm";
-import { crypto } from "./auth.js";
-import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
-import OpenAI from "openai";
-
-const openaiClient = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY
-});
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -83,19 +83,6 @@ export function registerRoutes(app: Express): Server {
               planning: 0.8,
               sociability: 0.4
             }
-          },
-          {
-            username: "test_user3",
-            name: "Jordan Lee",
-            bio: "Tech geek and gamer",
-            traits: {
-              extraversion: 0.5,
-              communication: 0.6,
-              openness: 0.8,
-              values: 0.7,
-              planning: 0.6,
-              sociability: 0.6
-            }
           }
         ];
 
@@ -110,7 +97,7 @@ export function registerRoutes(app: Express): Server {
             const hashedPassword = await crypto.hash('testpass123');
             await db.insert(users).values({
               username: testUser.username,
-              password: hashedPassword, // crypto.hash already includes salt
+              password: hashedPassword,
               name: testUser.name,
               bio: testUser.bio,
               quizCompleted: true,
@@ -127,6 +114,309 @@ export function registerRoutes(app: Express): Server {
       }
     });
   }
+
+  // Get all matches for the authenticated user
+  app.get("/api/matches", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as SelectUser;
+      
+      const potentialMatches = await db.select()
+        .from(users)
+        .leftJoin(matches, or(
+          and(
+            eq(matches.userId1, user.id),
+            eq(matches.userId2, users.id)
+          ),
+          and(
+            eq(matches.userId1, users.id),
+            eq(matches.userId2, user.id)
+          )
+        ))
+        .where(and(
+          ne(users.id, user.id),
+          eq(users.quizCompleted, true)
+        ));
+
+      // Calculate compatibility scores
+      const currentUserTraits = user.personalityTraits || {};
+      const matchesWithScores = potentialMatches.map((result) => {
+        const matchUser = result.users;
+        const existingMatch = result.matches;
+        const matchTraits = matchUser.personalityTraits || {};
+        
+        let compatibilityScore = 0;
+        let traitCount = 0;
+
+        // Compare each personality trait
+        for (const trait in currentUserTraits) {
+          if (matchTraits[trait] !== undefined) {
+            const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
+            compatibilityScore += similarity;
+            traitCount++;
+          }
+        }
+
+        const score = traitCount > 0 
+          ? Math.round((compatibilityScore / traitCount) * 100)
+          : 0;
+
+        return {
+          id: matchUser.id.toString(),
+          name: matchUser.name || matchUser.username,
+          username: matchUser.username,
+          avatar: "/default-avatar.png",
+          personalityTraits: matchTraits,
+          compatibilityScore: score,
+          status: existingMatch?.status || 'pending'
+        };
+      });
+
+      res.json(matchesWithScores.sort((a, b) => b.compatibilityScore - a.compatibilityScore));
+    } catch (error) {
+      console.error("Error fetching matches:", error);
+      res.status(500).json({ 
+        message: "Failed to fetch matches",
+        error: app.get('env') === 'development' ? error : undefined
+      });
+    }
+  });
+
+  // Get a single match by ID
+  app.get("/api/matches/:id", requireAuth, async (req, res) => {
+    try {
+      // Input validation
+      const matchId = parseInt(req.params.id);
+      if (isNaN(matchId) || matchId <= 0) {
+        return res.status(400).json({ 
+          message: "Invalid match ID. Please provide a valid positive number." 
+        });
+      }
+
+      const user = req.user as SelectUser;
+      
+      // Verify user has completed profile
+      if (!user.personalityTraits || Object.keys(user.personalityTraits).length === 0) {
+        return res.status(403).json({ 
+          message: "Please complete your personality profile before viewing matches." 
+        });
+      }
+
+      // Fetch match with comprehensive error handling
+      const [matchWithUsers] = await db
+        .select({
+          match: {
+            id: matches.id,
+            userId1: matches.userId1,
+            userId2: matches.userId2,
+            createdAt: matches.createdAt,
+            status: matches.status
+          },
+          matchUser: {
+            id: users.id,
+            username: users.username,
+            name: users.name,
+            personalityTraits: users.personalityTraits
+          }
+        })
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
+            )
+          )
+        )
+        .leftJoin(users, eq(users.id, 
+          sql`CASE 
+            WHEN ${matches.userId1} = ${user.id} THEN ${matches.userId2}
+            ELSE ${matches.userId1}
+          END`
+        ))
+        .limit(1);
+
+      if (!matchWithUsers) {
+        return res.status(404).json({ 
+          message: "Match not found. It may have been deleted or you may not have access." 
+        });
+      }
+
+      if (!matchWithUsers.matchUser) {
+        return res.status(404).json({ 
+          message: "Match user details not found. The user may have been deleted." 
+        });
+      }
+
+      const matchUser = matchWithUsers.matchUser;
+
+      if (!matchUser.personalityTraits || Object.keys(matchUser.personalityTraits).length === 0) {
+        return res.status(400).json({ 
+          message: "Match user has not completed their personality profile." 
+        });
+      }
+
+      // Calculate compatibility score
+      const currentUserTraits = user.personalityTraits || {};
+      const matchTraits = matchUser.personalityTraits || {};
+
+      let compatibilityScore = 0;
+      let traitCount = 0;
+
+      for (const trait in currentUserTraits) {
+        const userTrait = currentUserTraits[trait];
+        const matchTrait = matchTraits[trait];
+        
+        if (typeof userTrait === 'number' && typeof matchTrait === 'number') {
+          const similarity = 1 - Math.abs(userTrait - matchTrait);
+          compatibilityScore += similarity;
+          traitCount++;
+        }
+      }
+
+      const score = traitCount > 0 
+        ? Math.round((compatibilityScore / traitCount) * 100)
+        : 0;
+
+      return res.json({
+        id: matchWithUsers.match.id,
+        status: matchWithUsers.match.status,
+        createdAt: matchWithUsers.match.createdAt,
+        compatibilityScore: score,
+        name: matchUser.name || matchUser.username,
+        username: matchUser.username,
+        personalityTraits: matchTraits,
+        avatar: "/default-avatar.png"
+      });
+    } catch (error) {
+      console.error('Error fetching match:', error);
+      const errorMessage = error instanceof Error 
+        ? error.message 
+        : 'An unexpected error occurred while fetching match details';
+      
+      res.status(500).json({ 
+        message: errorMessage,
+        error: app.get('env') === 'development' ? error : undefined
+      });
+    }
+  });
+
+  // Connect with a match
+  app.post("/api/matches/:id/connect", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as SelectUser;
+      const matchId = parseInt(req.params.id);
+      
+      if (isNaN(matchId) || matchId <= 0) {
+        return res.status(400).json({ 
+          message: "Invalid match ID. Please provide a valid positive number." 
+        });
+      }
+
+      // Check if match already exists
+      const [existingMatch] = await db
+        .select()
+        .from(matches)
+        .where(
+          or(
+            and(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, matchId)
+            ),
+            and(
+              eq(matches.userId1, matchId),
+              eq(matches.userId2, user.id)
+            )
+          )
+        )
+        .limit(1);
+
+      if (existingMatch) {
+        if (existingMatch.status === 'requested') {
+          // Update to accepted if current user received the request
+          if (existingMatch.userId2 === user.id) {
+            const [updatedMatch] = await db
+              .update(matches)
+              .set({ status: 'accepted' })
+              .where(eq(matches.id, existingMatch.id))
+              .returning();
+            return res.json(updatedMatch);
+          }
+        }
+        return res.json(existingMatch);
+      }
+
+      // Create new match request
+      const [newMatch] = await db
+        .insert(matches)
+        .values({
+          userId1: user.id,
+          userId2: matchId,
+          status: 'requested',
+          createdAt: new Date()
+        })
+        .returning();
+
+      res.json(newMatch);
+    } catch (error) {
+      console.error("Error connecting match:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to connect match",
+        error: app.get('env') === 'development' ? error : undefined
+      });
+    }
+  });
+
+  // Get messages for a match
+  app.get("/api/matches/:id/messages", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as SelectUser;
+      const matchId = parseInt(req.params.id);
+      
+      if (isNaN(matchId) || matchId <= 0) {
+        return res.status(400).json({ 
+          message: "Invalid match ID. Please provide a valid positive number." 
+        });
+      }
+
+      // Verify match exists and user is part of it
+      const [match] = await db
+        .select()
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
+            )
+          )
+        )
+        .limit(1);
+
+      if (!match) {
+        return res.status(404).json({ message: "Match not found" });
+      }
+
+      if (match.status !== 'accepted') {
+        return res.status(403).json({ message: "Match must be accepted to view messages" });
+      }
+
+      const messages = await db
+        .select()
+        .from(messages)
+        .where(eq(messages.matchId, matchId))
+        .orderBy(messages.createdAt);
+
+      res.json(messages);
+    } catch (error) {
+      console.error("Error fetching messages:", error);
+      res.status(500).json({ 
+        message: error instanceof Error ? error.message : "Failed to fetch messages",
+        error: app.get('env') === 'development' ? error : undefined
+      });
+    }
+  });
 
   // Quiz submission
   app.post("/api/quiz", async (req, res) => {
@@ -159,172 +449,6 @@ export function registerRoutes(app: Express): Server {
       });
     }
   });
-
-  // Get potential matches with compatibility scores
-  app.get("/api/matches", requireAuth, async (req, res) => {
-    const user = req.user as SelectUser;
-    
-    const potentialMatches = await db.select()
-      .from(users)
-      .leftJoin(matches, or(
-        and(
-          eq(matches.userId1, req.user.id),
-          eq(matches.userId2, users.id)
-        ),
-        and(
-          eq(matches.userId1, users.id),
-          eq(matches.userId2, req.user.id)
-        )
-      ))
-      .where(and(
-        ne(users.id, req.user.id),
-        eq(users.quizCompleted, true)
-      ));
-
-    // Calculate compatibility scores
-    const currentUserTraits = req.user.personalityTraits || {};
-    const matchesWithScores = potentialMatches.map((result) => {
-      const user = result.users;
-      const existingMatch = result.matches;
-      const matchTraits = user.personalityTraits || {};
-      let compatibilityScore = 0;
-      let traitCount = 0;
-
-      // Compare each personality trait
-      for (const trait in currentUserTraits) {
-        if (matchTraits[trait] !== undefined) {
-          const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
-          compatibilityScore += similarity;
-          traitCount++;
-        }
-      }
-
-      // Calculate percentage (if there are matching traits)
-      const score = traitCount > 0 
-        ? Math.round((compatibilityScore / traitCount) * 100)
-        : 0;
-
-      return {
-        id: user.id.toString(),
-        name: user.name || user.username,
-        username: user.username,
-        avatar: "/default-avatar.png",
-        personalityTraits: matchTraits,
-        compatibilityScore: score,
-        status: existingMatch?.status || 'pending'
-      };
-    });
-
-    // Sort by compatibility score (highest first)
-    const sortedMatches = matchesWithScores.sort((a, b) => 
-      b.compatibilityScore - a.compatibilityScore
-    );
-
-    res.json(sortedMatches);
-  });
-
-  // Get a single match by ID - consolidated endpoint
-  app.get("/api/matches/:id", requireAuth, async (req, res) => {
-    try {
-      const matchId = parseInt(req.params.id);
-      if (isNaN(matchId)) {
-        return res.status(400).json({ message: "Invalid match ID" });
-      }
-
-      // Type assertion since requireAuth ensures req.user exists
-      const user = req.user as SelectUser;
-      if (!user) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-      
-      // Find the match in the database with both users' information
-      const [matchWithUsers] = await db
-        .select({
-          match: {
-            id: matches.id,
-            status: matches.status,
-            userId1: matches.userId1,
-            userId2: matches.userId2,
-            score: matches.score,
-            createdAt: matches.createdAt
-          },
-          matchUser: {
-            id: users.id,
-            username: users.username,
-            name: users.name,
-            personalityTraits: users.personalityTraits
-          }
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
-            )
-          )
-        )
-        .leftJoin(users, eq(users.id, 
-          sql`CASE 
-            WHEN ${matches.userId1} = ${user.id} THEN ${matches.userId2}
-            ELSE ${matches.userId1}
-          END`
-        ))
-        .limit(1);
-
-      if (!matchWithUsers) {
-        return res.status(404).json({ message: "Match not found or unauthorized" });
-      }
-
-      // Format response
-      if (!matchWithUsers.matchUser) {
-        return res.status(404).json({ message: "Match user not found" });
-      }
-
-      const matchUser = matchWithUsers.matchUser;
-      if (!matchUser) {
-        return res.status(404).json({ message: "Match user not found" });
-      }
-
-      const matchTraits = matchUser.personalityTraits || {};
-      const currentUserTraits = user.personalityTraits || {};
-      
-      // Calculate compatibility score
-      let compatibilityScore = 0;
-      let traitCount = 0;
-      for (const trait in currentUserTraits) {
-        if (matchTraits[trait] !== undefined) {
-          const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
-          compatibilityScore += similarity;
-          traitCount++;
-        }
-      }
-
-      const score = traitCount > 0 
-        ? Math.round((compatibilityScore / traitCount) * 100)
-        : matchWithUsers.match.score;
-
-      return res.json({
-        id: matchId,
-        status: matchWithUsers.match.status,
-        createdAt: matchWithUsers.match.createdAt,
-        score: score,
-        name: matchUser.name || matchUser.username,
-        username: matchUser.username,
-        personalityTraits: matchTraits,
-        avatar: "/default-avatar.png"
-      });
-    } catch (error) {
-      console.error("Error fetching match:", error);
-      return res.status(500).json({ 
-        message: "Failed to fetch match details",
-        error: error instanceof Error ? error.message : String(error)
-      });
-    }
-  });
-
-  // This route has been consolidated with the one above
 
   // Create a match request
   app.post("/api/matches", async (req, res) => {
@@ -441,171 +565,6 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Connect with a match
-  app.post("/api/matches/:matchId/connect", async (req, res) => {
-    if (!req.user) return res.status(401).json({ message: "Not authenticated" });
-
-    try {
-      const matchId = parseInt(req.params.matchId);
-      if (isNaN(matchId)) {
-        return res.status(400).json({ message: "Invalid match ID" });
-      }
-
-      // Create or update the match
-      const existingMatch = await db.select()
-        .from(matches)
-        .where(or(
-          and(
-            eq(matches.userId1, req.user.id),
-            eq(matches.userId2, matchId)
-          ),
-          and(
-            eq(matches.userId2, req.user.id),
-            eq(matches.userId1, matchId)
-          )
-        ))
-        .limit(1);
-
-      if (existingMatch.length > 0) {
-        const updated = await db.update(matches)
-          .set({ status: 'pending' })
-          .where(eq(matches.id, existingMatch[0].id))
-          .returning();
-        
-        return res.json(updated[0]);
-      }
-
-      const newMatch = await db.insert(matches)
-        .values({
-          userId1: req.user.id,
-          userId2: matchId,
-          status: 'pending',
-          score: 0
-        })
-        .returning();
-
-      res.json(newMatch[0]);
-    } catch (error) {
-      console.error("Error connecting match:", error);
-      res.status(500).json({ message: "Failed to connect match" });
-    }
-  });
-
-  // Get messages for a match
-  app.get("/api/matches/:matchId/messages", requireAuth, async (req, res) => {
-    try {
-      // requireAuth middleware already ensures req.user exists
-
-      const matchId = parseInt(req.params.matchId);
-      if (isNaN(matchId)) {
-        return res.status(400).json({ message: "Invalid match ID" });
-      }
-      
-      // First check if match exists and user is part of it
-      const [matchWithStatus] = await db
-        .select({
-          id: matches.id,
-          status: matches.status,
-          userId1: matches.userId1,
-          userId2: matches.userId2
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, (req.user as SelectUser).id),
-              eq(matches.userId2, (req.user as SelectUser).id)
-            )
-          )
-        )
-        .limit(1);
-
-      if (!matchWithStatus) {
-        return res.status(404).json({ message: "Match not found" });
-      }
-
-      const isUserInMatch = 
-        matchWithStatus.userId1 === req.user.id || 
-        matchWithStatus.userId2 === req.user.id;
-
-      if (!isUserInMatch) {
-        return res.status(403).json({ message: "Not authorized to view this match" });
-      }
-
-      // Only allow messages for accepted matches
-      if (matchWithStatus.status !== 'accepted') {
-        return res.status(403).json({ message: "Match must be accepted to view messages" });
-      }
-
-      // Get all messages for this match
-      const chatMessages = await db
-        .select({
-          id: messages.id,
-          content: messages.content,
-          senderId: messages.senderId,
-          createdAt: messages.createdAt,
-          matchId: messages.matchId
-        })
-        .from(messages)
-        .where(eq(messages.matchId, matchId))
-        .orderBy(messages.createdAt);
-
-      res.json(chatMessages);
-    } catch (error) {
-      console.error("Error fetching messages:", error);
-      res.status(500).json({ message: "Failed to fetch messages" });
-    }
-  });
-
-  // Send a message
-  app.post("/api/matches/:matchId/messages", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as SelectUser;
-      const matchId = parseInt(req.params.matchId);
-      const { content } = req.body;
-
-      if (isNaN(matchId)) {
-        return res.status(400).json({ message: "Invalid match ID" });
-      }
-
-      if (!content || typeof content !== "string") {
-        return res.status(400).json({ message: "Message content is required" });
-      }
-
-      // Verify match exists and user is part of it
-      const [match] = await db
-        .select()
-        .from(matches)
-        .where(eq(matches.id, matchId))
-        .limit(1);
-
-      if (!match) {
-        return res.status(404).json({ message: "Match not found" });
-      }
-
-      if (match.userId1 !== user.id && match.userId2 !== user.id) {
-        return res.status(403).json({ message: "Not authorized to send messages in this match" });
-      }
-
-      // Create the message
-      const [newMessage] = await db
-        .insert(messages)
-        .values({
-          matchId,
-          senderId: user.id,
-          content: content.trim(),
-          createdAt: new Date(),
-          analyzed: false
-        })
-        .returning();
-
-      res.json(newMessage);
-    } catch (error) {
-      console.error("Error sending message:", error);
-      res.status(500).json({ message: "Failed to send message" });
-    }
-  });
 
   // Get AI conversation suggestions
   app.post("/api/suggest", requireAuth, async (req: Request, res: Response) => {
@@ -632,8 +591,8 @@ export function registerRoutes(app: Express): Server {
           and(
             eq(matches.id, parsedMatchId),
             or(
-              eq(matches.userId1, req.user.id),
-              eq(matches.userId2, req.user.id)
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
             )
           )
         )
@@ -840,40 +799,36 @@ export function registerRoutes(app: Express): Server {
 
       // Format response
       const matchUser = matchWithUsers.matchUser;
-      const matchTraits = matchUser.personalityTraits || {};
-      const currentUserTraits = req.user!.personalityTraits || {};
-      
-      // Calculate compatibility score
-      let compatibilityScore = 0;
-      let traitCount = 0;
-      for (const trait in currentUserTraits) {
-        if (matchTraits[trait] !== undefined) {
-          const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
-          compatibilityScore += similarity;
-          traitCount++;
-        }
-      }
+      const userTraits = req.user!.personalityTraits || {};
+      const matchTraits = matchUser!.personalityTraits || {};
 
-      const score = traitCount > 0 
-        ? Math.round((compatibilityScore / traitCount) * 100)
-        : matchWithUsers.match.score;
-
-      return res.json({
-        id: matchId,
-        status: matchWithUsers.match.status,
-        createdAt: matchWithUsers.match.createdAt,
-        score: score,
-        name: matchUser.name || matchUser.username,
-        username: matchUser.username,
-        personalityTraits: matchTraits,
-        avatar: "/default-avatar.png"
+    // Generate suggestions based on personality traits
+      const completion = await openaiClient.chat.completions.create({
+        model: "gpt-3.5-turbo",
+        messages: [
+          {
+            role: "system",
+            content: "You are a helpful assistant providing conversation suggestions for two people getting to know each other. Keep suggestions natural, friendly, and aligned with their personality traits."
+          },
+          {
+            role: "user",
+            content: `Generate 3 conversation starters or questions based on these personality traits:
+              Person 1 traits: ${JSON.stringify(userTraits)}
+              Person 2 traits: ${JSON.stringify(matchTraits)}
+              Make them natural and engaging, focusing on common interests or complementary traits.`
+          }
+        ]
       });
+
+      const suggestions = completion.choices[0].message.content?.split('\n')
+        .filter((line: string) => line.trim())
+        .map((line: string) => line.replace(/^\d+\.\s*/, ''))
+        .slice(0, 3) || [];
+
+      res.json({ suggestions });
     } catch (error) {
-      console.error("Error fetching match:", error);
-      return res.status(500).json({ 
-        message: "Failed to fetch match details",
-        error: error instanceof Error ? error.message : String(error)
-      });
+      console.error('Error generating suggestions:', error);
+      res.status(500).json({ message: "Failed to generate suggestions" });
     }
   });
 
