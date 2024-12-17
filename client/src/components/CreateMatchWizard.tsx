@@ -27,18 +27,26 @@ import { useToast } from "@/hooks/use-toast";
 import { Progress } from "@/components/ui/progress";
 import { ArrowLeft, ArrowRight, Heart } from "lucide-react";
 
+const interestFields = [
+  'extraversion',
+  'communication',
+  'openness',
+  'values',
+  'planning',
+  'sociability',
+] as const;
+
 const wizardSchema = z.object({
-  interests: z.object({
-    extraversion: z.number().min(0).max(1),
-    communication: z.number().min(0).max(1),
-    openness: z.number().min(0).max(1),
-    values: z.number().min(0).max(1),
-    planning: z.number().min(0).max(1),
-    sociability: z.number().min(0).max(1),
-  }),
+  interests: z.object(
+    interestFields.reduce(
+      (acc, field) => ({ ...acc, [field]: z.number().min(0).max(1) }),
+      {} as Record<typeof interestFields[number], z.ZodNumber>
+    )
+  ),
 });
 
 type WizardFormData = z.infer<typeof wizardSchema>;
+type InterestField = typeof interestFields[number];
 
 interface CreateMatchWizardProps {
   initialMatchId: string | null;
@@ -69,19 +77,25 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
 
   const progress = (step / totalSteps) * 100;
 
-  const nextStep = () => {
+  const handleNavigateNext = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
     if (step < totalSteps) {
-      setStep(step + 1);
+      setStep(prev => prev + 1);
     }
   };
 
-  const prevStep = () => {
+  const handleNavigateBack = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.preventDefault();
     if (step > 1) {
-      setStep(step - 1);
+      setStep(prev => prev - 1);
     }
   };
 
-  const onSubmit = async (data: WizardFormData) => {
+  const handleFormSubmit = async (data: WizardFormData) => {
+    if (step !== totalSteps) {
+      return;
+    }
+
     try {
       if (!user) {
         throw new Error("You must be logged in to create a match");
@@ -91,11 +105,9 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
         throw new Error("No match ID provided");
       }
 
-      // Calculate compatibility score based on interests
       const userTraits = data.interests;
       const compatibilityScore = Object.values(userTraits).reduce((sum, val) => sum + val, 0) / Object.keys(userTraits).length;
 
-      // Create the match with calculated score
       const match = await connect({
         id: initialMatchId,
         score: Math.round(compatibilityScore * 100)
@@ -111,14 +123,13 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
     } catch (error: any) {
       console.error('Error creating match:', error);
       
-      // Handle specific error cases
       if (error.message.includes('already exists')) {
         toast({
           title: "Match Exists",
           description: "You already have a match with this user.",
           variant: "default",
         });
-        onComplete(); // Redirect to matches page
+        onComplete();
       } else {
         toast({
           title: "Error",
@@ -140,16 +151,21 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
       </CardHeader>
 
       <Form {...form}>
-        <form onSubmit={form.handleSubmit(onSubmit)}>
+        <form 
+          onSubmit={form.handleSubmit(handleFormSubmit)}
+          onChange={(e) => {
+            e.preventDefault();
+          }}
+        >
           <CardContent>
             {step === 1 && (
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">What are you looking for?</h3>
-                {Object.entries(form.getValues().interests).map(([trait, value]) => (
+                {interestFields.map((trait) => (
                   <FormField
                     key={trait}
                     control={form.control}
-                    name={`interests.${trait}`}
+                    name={`interests.${trait}` as const}
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>{formatTrait(trait)}</FormLabel>
@@ -159,12 +175,17 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
                             max={1}
                             step={0.1}
                             value={[field.value]}
-                            onValueChange={([value]) => field.onChange(value)}
+                            onValueChange={([newValue]) => {
+                              if (typeof newValue === 'number' && !Number.isNaN(newValue)) {
+                                field.onChange(newValue);
+                              }
+                            }}
                           />
                         </FormControl>
                         <FormDescription>
                           {getTraitDescription(trait, field.value)}
                         </FormDescription>
+                        <FormMessage />
                       </FormItem>
                     )}
                   />
@@ -175,14 +196,14 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
             {step === 2 && (
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Preview Potential Matches</h3>
-                {/* TODO: Add match preview based on selected traits */}
+                {/* Preview content */}
               </div>
             )}
 
             {step === 3 && (
               <div className="space-y-4">
                 <h3 className="text-lg font-medium">Confirm Your Preferences</h3>
-                {/* TODO: Add summary and confirmation step */}
+                {/* Confirmation content */}
               </div>
             )}
           </CardContent>
@@ -191,25 +212,23 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
             <Button
               type="button"
               variant="outline"
-              onClick={step === 1 ? onCancel : prevStep}
+              onClick={step === 1 ? onCancel : handleNavigateBack}
             >
               <ArrowLeft className="w-4 h-4 mr-2" />
               {step === 1 ? "Cancel" : "Back"}
             </Button>
 
-            <Button type="button" onClick={step === totalSteps ? form.handleSubmit(onSubmit) : nextStep}>
-              {step === totalSteps ? (
-                <>
-                  <Heart className="w-4 h-4 mr-2" />
-                  Create Match
-                </>
-              ) : (
-                <>
-                  Next
-                  <ArrowRight className="w-4 h-4 ml-2" />
-                </>
-              )}
-            </Button>
+            {step === totalSteps ? (
+              <Button type="submit">
+                <Heart className="w-4 h-4 mr-2" />
+                Create Match
+              </Button>
+            ) : (
+              <Button type="button" onClick={handleNavigateNext}>
+                Next
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            )}
           </CardFooter>
         </form>
       </Form>
@@ -230,12 +249,12 @@ function getStepDescription(step: number): string {
   }
 }
 
-function formatTrait(trait: string): string {
+function formatTrait(trait: InterestField): string {
   return trait.charAt(0).toUpperCase() + trait.slice(1);
 }
 
-function getTraitDescription(trait: string, value: number): string {
-  const descriptions: Record<string, [string, string]> = {
+function getTraitDescription(trait: InterestField, value: number): string {
+  const descriptions: Record<InterestField, [string, string]> = {
     extraversion: ["Prefers quiet, intimate settings", "Enjoys social, energetic environments"],
     communication: ["Values actions over words", "Emphasizes verbal expression"],
     openness: ["Appreciates routine and tradition", "Seeks new experiences"],
@@ -244,6 +263,6 @@ function getTraitDescription(trait: string, value: number): string {
     sociability: ["Values independence", "Thrives in group settings"],
   };
 
-  const [low, high] = descriptions[trait] || ["Low", "High"];
+  const [low, high] = descriptions[trait];
   return value < 0.4 ? low : value > 0.6 ? high : "Balanced approach";
 }
