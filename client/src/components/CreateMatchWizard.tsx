@@ -79,6 +79,7 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
 
   const handleNavigateNext = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     if (step < totalSteps) {
       setStep(prev => prev + 1);
     }
@@ -86,12 +87,14 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
 
   const handleNavigateBack = (e: React.MouseEvent<HTMLButtonElement>) => {
     e.preventDefault();
+    e.stopPropagation();
     if (step > 1) {
       setStep(prev => prev - 1);
     }
   };
 
   const handleFormSubmit = async (data: WizardFormData) => {
+    // Only process form submission on the final step
     if (step !== totalSteps) {
       return;
     }
@@ -152,9 +155,21 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
 
       <Form {...form}>
         <form 
-          onSubmit={form.handleSubmit(handleFormSubmit)}
-          onChange={(e) => {
+          onSubmit={(e: React.FormEvent<HTMLFormElement>) => {
             e.preventDefault();
+            e.stopPropagation();
+            if (step === totalSteps) {
+              void form.handleSubmit(handleFormSubmit)(e);
+            }
+          }}
+          onChange={(e: React.FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
+            return false;
+          }}
+          onInput={(e: React.FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            e.stopPropagation();
           }}
         >
           <CardContent>
@@ -177,7 +192,24 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
                             value={[field.value]}
                             onValueChange={([newValue]) => {
                               if (typeof newValue === 'number' && !Number.isNaN(newValue)) {
-                                field.onChange(newValue);
+                                // Batch updates to prevent unnecessary rerenders
+                                requestAnimationFrame(() => {
+                                  // Update field value without validation
+                                  field.onChange(newValue);
+                                  // Silent form state update
+                                  form.setValue(`interests.${trait}`, newValue, {
+                                    shouldValidate: false,
+                                    shouldDirty: false,
+                                    shouldTouch: false,
+                                  });
+                                });
+                              }
+                            }}
+                            onValueCommit={([newValue]) => {
+                              if (typeof newValue === 'number' && !Number.isNaN(newValue)) {
+                                form.setValue(`interests.${trait}`, newValue, {
+                                  shouldValidate: false,
+                                });
                               }
                             }}
                           />
