@@ -115,8 +115,8 @@ export function registerRoutes(app: Express): Server {
     });
   }
 
-  // Get all matches for the authenticated user
-  app.get("/api/matches", requireAuth, async (req, res) => {
+  // Get all matches for the authenticated user with proper error handling
+  app.get("/api/matches", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as SelectUser;
       
@@ -184,32 +184,34 @@ export function registerRoutes(app: Express): Server {
   // Get a single match by ID
   app.get("/api/matches/:id", requireAuth, async (req, res) => {
     try {
-      // Input validation
+      if (!req.user) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      const user = req.user;
       const matchId = parseInt(req.params.id);
+
       if (isNaN(matchId) || matchId <= 0) {
         return res.status(400).json({ 
           message: "Invalid match ID. Please provide a valid positive number." 
         });
       }
 
-      const user = req.user as SelectUser;
-      
-      // Verify user has completed profile
       if (!user.personalityTraits || Object.keys(user.personalityTraits).length === 0) {
         return res.status(403).json({ 
           message: "Please complete your personality profile before viewing matches." 
         });
       }
 
-      // Fetch match with comprehensive error handling
-      const [matchWithUsers] = await db
+      // Fetch match details
+      const [matchDetails] = await db
         .select({
           match: {
             id: matches.id,
-            userId1: matches.userId1,
-            userId2: matches.userId2,
+            status: matches.status,
             createdAt: matches.createdAt,
-            status: matches.status
+            userId1: matches.userId1,
+            userId2: matches.userId2
           },
           matchUser: {
             id: users.id,
@@ -228,75 +230,76 @@ export function registerRoutes(app: Express): Server {
             )
           )
         )
-        .leftJoin(users, eq(users.id, 
-          sql`CASE 
-            WHEN ${matches.userId1} = ${user.id} THEN ${matches.userId2}
-            ELSE ${matches.userId1}
-          END`
-        ))
+        .leftJoin(
+          users,
+          eq(users.id,
+            sql`CASE 
+              WHEN ${matches.userId1} = ${user.id} THEN ${matches.userId2}
+              ELSE ${matches.userId1}
+            END`
+          )
+        )
         .limit(1);
 
-      if (!matchWithUsers) {
-        return res.status(404).json({ 
-          message: "Match not found. It may have been deleted or you may not have access." 
+      if (!matchDetails) {
+        return res.status(404).json({
+          message: "Match not found. It may have been deleted or you may not have access."
         });
       }
 
-      if (!matchWithUsers.matchUser) {
-        return res.status(404).json({ 
-          message: "Match user details not found. The user may have been deleted." 
+      const { match, matchUser } = matchDetails;
+
+      if (!matchUser) {
+        return res.status(404).json({
+          message: "Match user details not found. The user may have been deleted."
         });
       }
-
-      const matchUser = matchWithUsers.matchUser;
 
       if (!matchUser.personalityTraits || Object.keys(matchUser.personalityTraits).length === 0) {
-        return res.status(400).json({ 
-          message: "Match user has not completed their personality profile." 
+        return res.status(403).json({
+          message: "Match user has not completed their personality profile."
         });
       }
 
       // Calculate compatibility score
-      const currentUserTraits = user.personalityTraits || {};
+      const userTraits = user.personalityTraits || {};
       const matchTraits = matchUser.personalityTraits || {};
+      
+      const traitScores = Object.entries(userTraits)
+        .filter(([trait, value]): value is number => 
+          trait in matchTraits && 
+          typeof value === 'number' &&
+          typeof matchTraits[trait] === 'number'
+        )
+        .map(([trait, userValue]) => {
+          const matchValue = matchTraits[trait] as number;
+          return 1 - Math.abs(userValue - matchValue);
+        });
 
-      let compatibilityScore = 0;
-      let traitCount = 0;
-
-      for (const trait in currentUserTraits) {
-        const userTrait = currentUserTraits[trait];
-        const matchTrait = matchTraits[trait];
-        
-        if (typeof userTrait === 'number' && typeof matchTrait === 'number') {
-          const similarity = 1 - Math.abs(userTrait - matchTrait);
-          compatibilityScore += similarity;
-          traitCount++;
-        }
-      }
-
-      const score = traitCount > 0 
-        ? Math.round((compatibilityScore / traitCount) * 100)
+      const compatibilityScore = traitScores.length > 0
+        ? Math.round((traitScores.reduce((a, b) => a + b, 0) / traitScores.length) * 100)
         : 0;
 
       return res.json({
-        id: matchWithUsers.match.id,
-        status: matchWithUsers.match.status,
-        createdAt: matchWithUsers.match.createdAt,
-        compatibilityScore: score,
+        id: match.id,
+        status: match.status,
+        createdAt: match.createdAt,
+        compatibilityScore,
         name: matchUser.name || matchUser.username,
         username: matchUser.username,
         personalityTraits: matchTraits,
         avatar: "/default-avatar.png"
       });
+
     } catch (error) {
       console.error('Error fetching match:', error);
       const errorMessage = error instanceof Error 
         ? error.message 
         : 'An unexpected error occurred while fetching match details';
       
-      res.status(500).json({ 
+      res.status(500).json({
         message: errorMessage,
-        error: app.get('env') === 'development' ? error : undefined
+        ...(app.get('env') === 'development' ? { error } : {})
       });
     }
   });

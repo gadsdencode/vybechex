@@ -1,7 +1,8 @@
 import { useRef, useEffect, useState } from "react";
 import ForceGraph2D from "react-force-graph-2d";
 import type { ForceGraphMethods } from "react-force-graph-2d";
-import type { Match, User } from "../hooks/use-matches";
+import type { Match } from "../hooks/use-matches";
+import type { SelectUser } from "@db/schema";
 
 // Define custom LinkObject interface
 interface CustomNodeObject {
@@ -61,7 +62,7 @@ export function NetworkGraph() {
         val: 40, // Make current user node larger
       },
       ...matches.map((match: Match) => ({
-        id: match.id,
+        id: match.id.toString(),
         name: match.name || match.username,
         val: 30,
       })),
@@ -70,7 +71,7 @@ export function NetworkGraph() {
     // Create links between the current user and matches
     const links: CustomLinkObject[] = matches.map((match: Match) => ({
       source: nodes.find((node) => node.id === user.id.toString())!,
-      target: nodes.find((node) => node.id === match.id)!,
+      target: nodes.find((node) => node.id === match.id.toString())!,
       value: match.compatibilityScore / 100, // Normalize to 0-1
     }));
 

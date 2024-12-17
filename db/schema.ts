@@ -15,10 +15,12 @@ export const users = pgTable("users", {
 
 export const matches = pgTable("matches", {
   id: serial("id").primaryKey(),
-  userId1: integer("user_id_1").notNull().references(() => users.id),
-  userId2: integer("user_id_2").notNull().references(() => users.id),
-  score: integer("score").notNull(),
-  status: text("status").notNull().default("pending"), // pending, accepted, rejected
+  userId1: integer("user_id_1").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId2: integer("user_id_2").notNull().references(() => users.id, { onDelete: 'cascade' }),
+  score: integer("score"),
+  status: text("status", { enum: ['requested', 'pending', 'accepted', 'rejected'] })
+    .notNull()
+    .default("pending"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 
