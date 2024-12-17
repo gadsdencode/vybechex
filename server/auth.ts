@@ -1,4 +1,15 @@
-// /server/auth.ts
+import passport from "passport";
+import { IVerifyOptions, Strategy as LocalStrategy } from "passport-local";
+import { type Express } from "express";
+import session from "express-session";
+import createMemoryStore from "memorystore";
+import { scrypt, randomBytes, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+import { users, insertUserSchema, type User as SelectUser } from "@db/schema";
+import { db } from "@db";
+import { eq } from "drizzle-orm";
+
+const scryptAsync = promisify(scrypt);
 
 import passport from "passport";
 import { IVerifyOptions, Strategy as LocalStrategy } from "passport-local";
@@ -38,11 +49,15 @@ declare global {
 }
 
 export function setupAuth(app: Express) {
+  if (!process.env.DATABASE_URL) {
+    throw new Error("DATABASE_URL must be set for auth to work");
+  }
+
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: true,
-    saveUninitialized: true,
+    resave: false,
+    saveUninitialized: false,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       secure: app.get("env") === "production",

@@ -1,8 +1,8 @@
-// // server/routes.ts
+// server/routes.ts
 
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth } from "./auth.js";
+import { setupAuth } from "./auth";
 import { users, matches, messages } from "@db/schema";
 import type { SelectUser } from "@db/schema";
 import type { InsertUser } from "@db/schema";
@@ -39,11 +39,16 @@ export function registerRoutes(app: Express): Server {
       return res.status(401).json({ message: "Authentication required" });
     }
     
+    // Type assertion for authenticated user
+    const user = req.user as SelectUser;
+    
     // Ensure user has required properties
-    if (typeof req.user.id !== 'number' || typeof req.user.username !== 'string') {
+    if (typeof user.id !== 'number' || typeof user.username !== 'string') {
       return res.status(401).json({ message: "Invalid user session" });
     }
     
+    // Attach typed user to request
+    req.user = user;
     next();
   };
 
@@ -156,9 +161,9 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Get potential matches with compatibility scores
-  app.get("/api/matches", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-
+  app.get("/api/matches", requireAuth, async (req, res) => {
+    const user = req.user as SelectUser;
+    
     const potentialMatches = await db.select()
       .from(users)
       .leftJoin(matches, or(
@@ -228,6 +233,9 @@ export function registerRoutes(app: Express): Server {
 
       // Type assertion since requireAuth ensures req.user exists
       const user = req.user as SelectUser;
+      if (!user) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
       
       // Find the match in the database with both users' information
       const [matchWithUsers] = await db
@@ -270,7 +278,15 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Format response
+      if (!matchWithUsers.matchUser) {
+        return res.status(404).json({ message: "Match user not found" });
+      }
+
       const matchUser = matchWithUsers.matchUser;
+      if (!matchUser) {
+        return res.status(404).json({ message: "Match user not found" });
+      }
+
       const matchTraits = matchUser.personalityTraits || {};
       const currentUserTraits = user.personalityTraits || {};
       
@@ -498,8 +514,8 @@ export function registerRoutes(app: Express): Server {
           and(
             eq(matches.id, matchId),
             or(
-              eq(matches.userId1, req.user.id),
-              eq(matches.userId2, req.user.id)
+              eq(matches.userId1, (req.user as SelectUser).id),
+              eq(matches.userId2, (req.user as SelectUser).id)
             )
           )
         )
@@ -543,10 +559,9 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Send a message
-  app.post("/api/matches/:matchId/messages", async (req, res) => {
-    if (!req.user) return res.status(401).json({ message: "Not authenticated" });
-
+  app.post("/api/matches/:matchId/messages", requireAuth, async (req, res) => {
     try {
+      const user = req.user as SelectUser;
       const matchId = parseInt(req.params.matchId);
       const { content } = req.body;
 
@@ -569,7 +584,7 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Match not found" });
       }
 
-      if (match.userId1 !== req.user.id && match.userId2 !== req.user.id) {
+      if (match.userId1 !== user.id && match.userId2 !== user.id) {
         return res.status(403).json({ message: "Not authorized to send messages in this match" });
       }
 
@@ -578,7 +593,7 @@ export function registerRoutes(app: Express): Server {
         .insert(messages)
         .values({
           matchId,
-          senderId: req.user.id,
+          senderId: user.id,
           content: content.trim(),
           createdAt: new Date(),
           analyzed: false
@@ -633,7 +648,7 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Get the other user's data
-      const otherUserId = matchDetails.userId1 === userId ? matchDetails.userId2 : matchDetails.userId1;
+      const otherUserId = matchDetails.userId1 === user.id ? matchDetails.userId2 : matchDetails.userId1;
       const [otherUser] = await db
         .select()
         .from(users)
@@ -872,6 +887,9 @@ export function registerRoutes(app: Express): Server {
 
       // Type assertion since requireAuth ensures req.user exists
       const user = req.user as SelectUser;
+      if (!user) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
       
       // Find the match and both users' personality traits
       const [matchWithUser] = await db
@@ -912,12 +930,23 @@ export function registerRoutes(app: Express): Server {
         return res.status(404).json({ message: "Match not found or not accepted" });
       }
 
+      if (!matchWithUser.matchUser) {
+        return res.status(404).json({ message: "Match user not found" });
+      }
+
+      if (!matchWithUser) {
+        return res.status(404).json({ message: "Match not found or not accepted" });
+      }
+
+      if (!matchWithUser.matchUser) {
+        return res.status(404).json({ message: "Match user not found" });
+      }
+
       const matchUser = matchWithUser.matchUser;
       const userTraits = user.personalityTraits || {};
       const matchTraits = matchUser.personalityTraits || {};
 
     // Generate suggestions based on personality traits
-    try {
       const completion = await openaiClient.chat.completions.create({
         model: "gpt-3.5-turbo",
         messages: [
