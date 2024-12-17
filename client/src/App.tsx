@@ -4,6 +4,7 @@ import { Loader2 } from "lucide-react";
 import Home from "./pages/Home";
 import Quiz from "./pages/Quiz";
 import Matches from "./pages/Matches";
+import CreateMatch from "./pages/CreateMatch";
 import Chat from "./pages/Chat";
 import Navigation from "./components/Navigation";
 import AuthPage from "./pages/AuthPage";
@@ -31,6 +32,7 @@ function App() {
           <Route path="/" component={Home} />
           <Route path="/quiz" component={Quiz} />
           <Route path="/matches" component={Matches} />
+          <Route path="/matches/create" component={CreateMatch} />
           <Route path="/chat/:id" component={Chat} />
           <Route>404 - Not Found</Route>
         </Switch>
