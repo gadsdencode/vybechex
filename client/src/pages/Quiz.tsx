@@ -8,41 +8,127 @@ import { useQueryClient } from "@tanstack/react-query";
 const questions = [
   {
     id: 1,
-    text: "How do you prefer to spend your free time?",
-    options: ["Socializing with friends", "Reading or solo activities", "Mix of both", "Outdoor adventures"],
+    text: "When you spend time with others, how do you feel?",
+    options: [
+      "I feel happiest and excited in big, lively groups",
+      "I feel good talking in small, close-knit groups",
+      "I am okay with both small groups and one-on-one time",
+      "I feel best when I am alone"
+    ],
     trait: "extraversion"
   },
   {
     id: 2,
-    text: "What's your communication style?",
-    options: ["Direct and straightforward", "Diplomatic and tactful", "Mix depending on situation", "Prefer listening to speaking"],
+    text: "How do you usually share your ideas?",
+    options: [
+      "I say what I think clearly and simply",
+      "I choose my words to keep things friendly",
+      "I change how I talk depending on who I’m with",
+      "I mostly listen and speak only when I need to"
+    ],
     trait: "communication"
   },
   {
     id: 3,
-    text: "How do you handle new situations?",
-    options: ["Jump right in", "Observe first", "Go with the flow", "Plan carefully"],
+    text: "When you find something new or unfamiliar, how do you react?",
+    options: [
+      "I try it right away without waiting",
+      "I’m curious but I like to learn about it first",
+      "I go along with new things at an easy pace",
+      "I prefer to stick to what I already know"
+    ],
     trait: "openness"
   },
   {
     id: 4,
-    text: "What do you value most in friendships?",
-    options: ["Loyalty and trust", "Fun and excitement", "Deep conversations", "Similar interests"],
+    text: "What matters most to you in close friendships?",
+    options: [
+      "Having trust and knowing we can count on each other",
+      "Doing fun and exciting things together",
+      "Having deep talks and understanding each other’s feelings",
+      "Sharing common hobbies and interests"
+    ],
     trait: "values"
   },
   {
     id: 5,
-    text: "How do you prefer to make plans?",
-    options: ["Spontaneous decisions", "Structured planning", "Flexible scheduling", "Go with group consensus"],
+    text: "How do you like to plan activities?",
+    options: [
+      "I like to decide on the spot",
+      "I prefer to make a clear plan ahead of time",
+      "I’m flexible and can change plans if needed",
+      "I’m fine with whatever others choose"
+    ],
     trait: "planning"
   },
   {
     id: 6,
-    text: "What's your ideal group size for social activities?",
-    options: ["Large groups (6+ people)", "Small groups (2-3 people)", "One-on-one interactions", "Depends on the activity"],
+    text: "What size group do you most enjoy being part of?",
+    options: [
+      "A large, busy group with many people",
+      "A small group of close friends",
+      "Just one other person, one-on-one",
+      "It depends on what we’re doing"
+    ],
     trait: "sociability"
+  },
+  {
+    id: 7,
+    text: "If your plans suddenly change, how do you feel?",
+    options: [
+      "I quickly go along with the new plan",
+      "I talk it over with others before changing things",
+      "I pause and think carefully about what to do next",
+      "I feel uneasy and wish we stuck to the original plan"
+    ],
+    trait: "openness"
+  },
+  {
+    id: 8,
+    text: "Where do you feel most comfortable sharing your true thoughts?",
+    options: [
+      "In a lively group where everyone is talking",
+      "In a quiet, private place with one other person",
+      "Online or in writing, where I can think first",
+      "After I watch and listen for a while"
+    ],
+    trait: "communication"
+  },
+  {
+    id: 9,
+    text: "How do you discover new hobbies or interests?",
+    options: [
+      "I jump right in and learn as I go",
+      "I read and learn about it before starting",
+      "I ask friends for their ideas",
+      "I follow what interests me at the moment"
+    ],
+    trait: "openness"
+  },
+  {
+    id: 10,
+    text: "How do you choose what to do on a free weekend?",
+    options: [
+      "I plan my activities ahead of time",
+      "I leave my schedule open and decide later",
+      "I see what others want to do",
+      "I stick to things I already like"
+    ],
+    trait: "planning"
+  },
+  {
+    id: 11,
+    text: "What matters most when choosing a social activity?",
+    options: [
+      "Feeling excited and having lots of energy",
+      "Having good, meaningful talks",
+      "Feeling safe and comfortable",
+      "Trying something new and different"
+    ],
+    trait: "values"
   }
 ];
+
 
 export default function Quiz() {
   const [currentQuestion, setCurrentQuestion] = useState(0);

@@ -1,160 +1,130 @@
-import { useState } from "react";
-import { useRoute } from "wouter";
+import { useRoute, useLocation } from "wouter";
 import { useState, useEffect, useRef } from "react";
 import type { Message } from "@db/schema";
 import { useMatches } from "../hooks/use-matches";
-import { useChat } from "../hooks/use-chat";
+import { useChat, EventSuggestion } from "../hooks/use-chat";
+import type { SuggestionResponse, EventSuggestionResponse, Suggestion } from "../hooks/use-chat";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { Loader2, Send, Lightbulb, Calendar } from "lucide-react";
 import { useUser } from "../hooks/use-user";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { QueryKey } from "@tanstack/react-query";
+import type { Match } from "../hooks/use-matches";
 import { useToast } from "@/hooks/use-toast";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 export default function Chat() {
   const [, params] = useRoute<{ id: string }>("/chat/:id");
-  const matchId = params ? parseInt(params.id) : 0;
+  const matchId = params?.id ? parseInt(params.id) : null;
   const { user } = useUser();
-  const { getMessages, sendMessage } = useMatches();
+  const { getMessages, sendMessage, getMatch } = useMatches();
   const { getSuggestions, craftMessage, getEventSuggestions } = useChat();
   const [newMessage, setNewMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
+  const [, setLocation] = useLocation();
 
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
+  // Get match details first
+  const { data: match, isLoading: isLoadingMatch, error: matchError } = useQuery<Match, Error>({
+    queryKey: ['matches', matchId] as QueryKey,
+    queryFn: () => {
+      if (!matchId) throw new Error('No match ID provided');
+      return getMatch(matchId.toString());
+    },
+    enabled: !!matchId,
+    retry: (failureCount, error) => {
+      if (error.message.includes('Unauthorized') || error.message.includes('Session expired')) {
+        return false;
+      }
+      return failureCount < 3;
+    },
+    staleTime: 30000,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false
+  });
 
+  // Only fetch messages if match exists and is accepted
+  const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[], Error>({
+    queryKey: ['messages', matchId] as QueryKey,
+    queryFn: () => getMessages(matchId!.toString()),
+    enabled: !!matchId && match?.status === 'accepted',
+    refetchInterval: (query) => {
+      if (!matchId || match?.status !== 'accepted') return false;
+      const data = query.state.data;
+      if (!Array.isArray(data)) return 10000;
+      
+      const latestMessage = data[data.length - 1];
+      if (!latestMessage || !latestMessage.createdAt) return 15000;
+      
+      // Only refetch if the latest message is from the other user
+      if (latestMessage.senderId !== user?.id) {
+        const messageAge = Date.now() - new Date(latestMessage.createdAt).getTime();
+        return messageAge < 30000 ? 5000 : 15000;
+      }
+      return 15000;
+    },
+    refetchOnWindowFocus: true,
+    placeholderData: (previousData) => previousData,
+    staleTime: 5000,
+  });
+
+  // Scroll to bottom when new messages arrive
   useEffect(() => {
-    scrollToBottom();
+    if (messages?.length && messagesEndRef.current) {
+      messagesEndRef.current.scrollIntoView({ behavior: 'smooth' });
+    }
   }, [messages]);
 
-  const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[], Error>({
-    queryKey: ['/api/messages', matchId],
-    queryFn: () => getMessages(matchId),
-    refetchInterval: (data) => {
-      if (!Array.isArray(data) || data.length === 0) return 10000;
-      const latestMessage = data[0];
-      const isRecent = (new Date().getTime() - new Date(latestMessage.createdAt).getTime()) < 30000;
-      return (latestMessage.senderId === user?.id || isRecent) ? 30000 : 10000;
-    },
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: true,
-    staleTime: 10000,
-    select: (data) => {
-      return [...data].sort((a, b) => {
-        const dateA = new Date(b.createdAt || 0).getTime();
-        const dateB = new Date(a.createdAt || 0).getTime();
-        return dateA - dateB;
-      });
-    },
-    structuralSharing: false,
-    retry: (failureCount, error) => {
-      // Only retry network-related errors, not auth or validation errors
-      if (error instanceof Error && error.message.includes('Failed to fetch')) {
-        return failureCount < 3;
+  // Handle unauthorized errors
+  useEffect(() => {
+    if (matchError?.message?.includes('Unauthorized') || matchError?.message?.includes('Session expired')) {
+      window.location.href = '/login';
+    }
+  }, [matchError]);
+
+  const { data: chatSuggestions, isLoading: isLoadingSuggestions } = useQuery<SuggestionResponse>({
+    queryKey: ['suggest', matchId] as QueryKey,
+    queryFn: () => getSuggestions(matchId!),
+    staleTime: 60000,
+    retry: (failureCount, error: Error) => {
+      if (error.message.includes('Unauthorized') || error.message.includes('Session expired')) {
+        return false;
       }
-      return false;
+      return failureCount < 3;
     },
+    enabled: !!matchId && match?.status === 'accepted',
   });
 
-  const { data: chatSuggestions = { suggestions: [] }, isLoading: isLoadingSuggestions } = useQuery<{ suggestions: string[] }, Error>({
-    queryKey: ['/api/suggest', matchId],
-    queryFn: () => getSuggestions(matchId),
-    staleTime: 30000, // Suggestions valid for 30 seconds
+  const { data: eventSuggestionsData = { suggestions: [] }, isLoading: isLoadingEvents } = useQuery<EventSuggestionResponse>({
+    queryKey: ['events/suggest', matchId] as QueryKey,
+    queryFn: () => getEventSuggestions(matchId!),
+    staleTime: 60000,
     retry: false,
-  });
-
-  const { data: eventSuggestionsData = { suggestions: [] }, isLoading: isLoadingEvents } = useQuery<{ suggestions: string[] }, Error>({
-    queryKey: ['/api/events/suggest', matchId],
-    queryFn: () => getEventSuggestions(matchId),
-    staleTime: 60000, // Event suggestions valid for 1 minute
-    retry: false,
+    enabled: !!matchId && match?.status === 'accepted',
   });
 
   const isLoading = isLoadingMessages || isLoadingSuggestions || isLoadingEvents;
-  const suggestions = chatSuggestions.suggestions;
   const eventSuggestions = eventSuggestionsData.suggestions;
 
-  const queryClient = useQueryClient();
-  const { toast } = useToast();
-
-  type MutationContext = {
-    previousMessages: Message[];
-    optimisticMessage: Message;
-  };
-  
-  const sendMessageMutation = useMutation<
-    Message,
-    Error,
-    { matchId: number; content: string },
-    MutationContext
-  >({
-    mutationFn: sendMessage,
-    onMutate: async ({ matchId, content }) => {
-      // Cancel any outgoing refetches
-      await queryClient.cancelQueries({ queryKey: ['/api/messages', matchId] });
-
-      // Snapshot the previous value
-      const previousMessages = queryClient.getQueryData<Message[]>(['/api/messages', matchId]) || [];
-
-      // Create optimistic message
-      const optimisticMessage: Message = {
-        id: Date.now(),
-        matchId,
-        senderId: user?.id || 0,
-        content: content.trim(),
-        createdAt: new Date(),
-        analyzed: false,
-        sentiment: null
-      };
-
-      // Optimistically update to the new value
-      queryClient.setQueryData<Message[]>(
-        ['/api/messages', matchId],
-        (old = []) => [optimisticMessage, ...old]
-      );
-
-      // Clear input immediately for better UX
+  // Send message mutation
+  const sendMessageMutation = useMutation({
+    mutationFn: async (content: string) => {
+      if (!matchId) throw new Error("No match ID");
+      return sendMessage({ matchId: matchId.toString(), content });
+    },
+    onSuccess: () => {
       setNewMessage("");
-
-      return { previousMessages, optimisticMessage };
+      queryClient.invalidateQueries({ queryKey: ['messages', matchId] });
     },
-    onSuccess: (newMessage, variables, context) => {
-      if (!context) return;
-
-      queryClient.setQueryData<Message[]>(
-        ['/api/messages', variables.matchId],
-        (old = []) => {
-          // Remove optimistic message and add real one
-          const messages = old.filter(msg => msg.id !== context.optimisticMessage.id);
-          return [newMessage, ...messages];
-        }
-      );
-
-      // Invalidate suggestions to get fresh ones based on new message
-      queryClient.invalidateQueries({ queryKey: ['/api/suggest', variables.matchId] });
-    },
-    onError: (error: unknown, variables, context) => {
-      // Revert optimistic update
-      if (context?.previousMessages) {
-        queryClient.setQueryData(['/api/messages', matchId], context.previousMessages);
-      }
-      const errorMessage = error instanceof Error ? error.message : 'Failed to send message';
+    onError: (error: Error) => {
       toast({
-        title: "Error",
-        description: errorMessage,
+        title: "Error sending message",
+        description: error.message,
         variant: "destructive",
       });
-    },
-    onSettled: () => {
-      // Always refetch after error or success to ensure consistency
-      queryClient.invalidateQueries({ queryKey: ['/api/messages', matchId] });
     },
   });
 
@@ -162,14 +132,80 @@ export default function Chat() {
     e.preventDefault();
     if (!newMessage.trim()) return;
 
-    sendMessageMutation.mutate({ 
-      matchId, 
-      content: newMessage.trim() 
-    });
+    sendMessageMutation.mutate(newMessage.trim());
   };
 
-  
+  if (!matchId) {
+    return (
+      <div className="flex items-center justify-center h-[80vh]">
+        <p>Please return to your matches</p>
+      </div>
+    );
+  }
 
+  if (isLoadingMatch) {
+    return (
+      <div className="flex items-center justify-center h-[80vh]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!match) {
+    return (
+      <div className="flex items-center justify-center h-[80vh] flex-col gap-4">
+        <p>Match not found</p>
+        <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
+      </div>
+    );
+  }
+
+  if (match.status === 'pending') {
+    return (
+      <div className="flex items-center justify-center h-[80vh] flex-col gap-4">
+        <p>This match is pending acceptance</p>
+        <div className="flex gap-2">
+          <Button onClick={async () => {
+            try {
+              await fetch(`/api/matches/${matchId}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ status: 'accepted' }),
+                credentials: 'include',
+              });
+              queryClient.invalidateQueries({ queryKey: ['matches', matchId] });
+              toast({
+                title: "Match accepted!",
+                description: "You can now start chatting.",
+              });
+            } catch (error) {
+              toast({
+                title: "Error",
+                description: "Failed to accept match",
+                variant: "destructive",
+              });
+            }
+          }}>
+            Accept Match
+          </Button>
+          <Button variant="outline" onClick={() => setLocation('/matches')}>
+            Return to Matches
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (match.status === 'rejected') {
+    return (
+      <div className="flex items-center justify-center h-[80vh] flex-col gap-4">
+        <p>This match has been rejected</p>
+        <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
+      </div>
+    );
+  }
 
   // Only show full loading state on initial load with no messages
   if (isLoading && (!messages || messages.length === 0)) {
@@ -190,7 +226,7 @@ export default function Chat() {
   );
 
   return (
-    <div className="max-w-2xl mx-auto">
+    <div className="max-w-2xl bg-gray-500/50 mx-auto border border-white rounded-lg p-10 m-10">
       <div className="relative flex flex-col-reverse mb-6 h-[60vh] overflow-y-auto p-4 scrollbar-thin scrollbar-thumb-gray-300 scrollbar-track-transparent">
         <LoadingIndicator />
         <div ref={messagesEndRef} />
@@ -228,7 +264,11 @@ export default function Chat() {
         <div className="flex gap-2">
           <Popover>
             <PopoverTrigger asChild>
-              <Button variant="outline" size="icon">
+              <Button 
+                variant="outline" 
+                size="icon"
+                disabled={isLoadingSuggestions || !chatSuggestions?.suggestions?.length}
+              >
                 <Lightbulb className="h-4 w-4" />
               </Button>
             </PopoverTrigger>
@@ -236,27 +276,40 @@ export default function Chat() {
               <div className="p-2">
                 <h4 className="font-medium mb-3">Conversation Starters</h4>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                  {suggestions.map((suggestion: string, i: number) => (
-                    <Button
-                      key={i}
-                      variant="ghost"
-                      className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
-                      onClick={async () => {
-                        try {
-                          const { message } = await craftMessage({ 
-                            matchId, 
-                            suggestion 
-                          });
-                          setNewMessage(message);
-                        } catch (error) {
-                          console.error("Failed to craft message:", error);
-                          setNewMessage(suggestion); // Fallback to original suggestion
-                        }
-                      }}
-                    >
-                      {suggestion}
-                    </Button>
-                  ))}
+                  {isLoadingSuggestions ? (
+                    <div className="flex justify-center py-4">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    </div>
+                  ) : chatSuggestions?.suggestions?.length ? (
+                    chatSuggestions.suggestions.map((suggestion: Suggestion, i: number) => (
+                      <Button
+                        key={i}
+                        variant="ghost"
+                        className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          const popoverTrigger = e.currentTarget.closest('.popover-content')?.previousElementSibling as HTMLElement;
+                          popoverTrigger?.click(); // Close the popover
+                          try {
+                            const { message } = await craftMessage({ 
+                              matchId: matchId!, 
+                              suggestion: suggestion.text 
+                            });
+                            setNewMessage(message);
+                          } catch (error) {
+                            console.error("Failed to craft message:", error);
+                            setNewMessage(suggestion.text);
+                          }
+                        }}
+                      >
+                        {suggestion.text}
+                      </Button>
+                    ))
+                  ) : (
+                    <p className="text-center text-muted-foreground py-4">
+                      No suggestions available
+                    </p>
+                  )}
                 </div>
               </div>
             </PopoverContent>
@@ -272,25 +325,33 @@ export default function Chat() {
               <div className="p-2">
                 <h4 className="font-medium mb-3">Suggested Activities</h4>
                 <div className="space-y-2 max-h-[300px] overflow-y-auto pr-2">
-                  {eventSuggestions.map((event: string, i: number) => (
+                  {eventSuggestionsData.suggestions.map((event: EventSuggestion, i: number) => (
                     <Button
                       key={i}
                       variant="ghost"
                       className="w-full justify-start whitespace-normal text-left h-auto py-3 px-4"
-                      onClick={async () => {
+                      onClick={async (e) => {
+                        e.preventDefault();
+                        const popoverTrigger = e.currentTarget.closest('.popover-content')?.previousElementSibling as HTMLElement;
+                        popoverTrigger?.click(); // Close the popover
                         try {
                           const { message } = await craftMessage({ 
-                            matchId,
-                            suggestion: `Would you like to ${event.toLowerCase()}?`
+                            matchId: matchId!,
+                            suggestion: `Would you like to ${event.title.toLowerCase()}?`
                           });
                           setNewMessage(message);
                         } catch (error) {
                           console.error("Failed to craft message:", error);
-                          setNewMessage(`Would you like to ${event.toLowerCase()}?`); // Fallback
+                          setNewMessage(`Would you like to ${event.title.toLowerCase()}?`);
                         }
                       }}
                     >
-                      {event}
+                      {event.title}
+                      {event.description && (
+                        <span className="block text-sm text-muted-foreground mt-1">
+                          {event.description}
+                        </span>
+                      )}
                     </Button>
                   ))}
                 </div>

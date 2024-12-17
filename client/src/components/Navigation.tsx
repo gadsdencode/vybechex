@@ -1,6 +1,7 @@
 import { Link, useLocation } from "wouter";
 import { useUser } from "../hooks/use-user";
 import { Button } from "@/components/ui/button";
+import { ThemeToggle } from "./ThemeToggle";
 import { Home, Users, MessageSquare, LogOut } from "lucide-react";
 
 export default function Navigation() {
@@ -13,31 +14,38 @@ export default function Navigation() {
         <div className="flex items-center justify-between h-16">
           <div className="flex items-center space-x-4">
             <Link href="/" className="text-xl font-bold text-primary">
-              FriendMatch
+            VybeCheck
             </Link>
             
             <div className="hidden md:flex space-x-2">
-              <Button
-                variant={location === "/" ? "default" : "ghost"}
-                size="sm"
-                asChild
-              >
-                <Link href="/">
-                  <Home className="h-4 w-4 mr-2" />
-                  Home
-                </Link>
-              </Button>
+              <ThemeToggle />
+              {user ? (
+                <>
+                <Button
+                  variant={location === "/" ? "default" : "ghost"}
+                  size="sm"
+                  asChild
+                >
+                  <Link href="/">
+                    <Home className="h-4 w-4 mr-2" />
+                    Home
+                  </Link>
+                </Button>
 
-              <Button
-                variant={location === "/matches" ? "default" : "ghost"}
-                size="sm"
-                asChild
-              >
-                <Link href="/matches">
-                  <Users className="h-4 w-4 mr-2" />
-                  Matches
-                </Link>
-              </Button>
+                <Button
+                  variant={location === "/matches" ? "default" : "ghost"}
+                  size="sm"
+                  asChild
+                >
+                  <Link href="/matches">
+                    <Users className="h-4 w-4 mr-2" />
+                    Matches
+                  </Link>
+                </Button>
+                </>
+              ) : (
+                <></>
+              )}
             </div>
           </div>
 

@@ -1,45 +1,230 @@
-import { useQuery, useMutation } from "@tanstack/react-query";
-import type { User, Match, Message } from "@db/schema";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import type { User, Message } from "@db/schema";
+import { toast } from "./use-toast";
+
+interface Interest {
+  name: string;
+  score: number;
+  category: 'personality' | 'hobby' | 'value';
+}
+
+export interface ExtendedUser {
+  id: string;
+  username: string;
+  name: string;
+  personalityTraits: Record<string, number>;
+  compatibilityScore: number;
+  avatar: string;
+  interests: Interest[];
+  status: 'pending' | 'accepted' | 'rejected';
+}
+
+export type Match = ExtendedUser;
 
 export function useMatches() {
-  const { data: matches, isLoading } = useQuery<(User & { compatibilityScore: number })[]>({
-    queryKey: ["/api/matches"],
+  const queryClient = useQueryClient();
+  const { data: rawMatches, isLoading } = useQuery<ExtendedUser[]>({
+    queryKey: ["matches"],
+    queryFn: async () => {
+      try {
+        const response = await fetch("/api/matches");
+        if (!response.ok) {
+          throw new Error("Failed to fetch matches");
+        }
+        return await response.json();
+      } catch (error) {
+        console.error("Error fetching matches:", error);
+        throw error;
+      }
+    },
+    staleTime: 30000, // Data stays fresh for 30 seconds
+    gcTime: 1000 * 60 * 5, // Cache data for 5 minutes
+    refetchOnWindowFocus: false // Prevent refetch on window focus
   });
 
-  const sendMessage = useMutation({
-    mutationFn: async ({ matchId, content }: { matchId: number, content: string }) => {
-      const res = await fetch("/api/messages", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ matchId, content }),
-        credentials: "include",
+  const connect = useMutation({
+    mutationFn: async ({ id }: { id: string }) => {
+      const response = await fetch(`/api/matches/${id}/connect`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
+        credentials: 'include'
       });
 
-      if (!res.ok) {
-        const error = await res.text();
-        throw new Error(error || "Failed to send message");
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.message || 'Failed to connect');
       }
-
-      return res.json();
+      return response.json();
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      toast({
+        title: "Connection request sent!",
+        description: "We'll notify you when they respond.",
+      });
+    },
+    onError: (error: Error) => {
+      toast({
+        title: "Failed to connect",
+        description: error.message,
+        variant: "destructive",
+      });
+    }
   });
 
-  const getMessages = async (matchId: number) => {
-    const res = await fetch(`/api/messages/${matchId}`, {
-      credentials: "include",
+  const sendMessage = async ({ matchId, content }: { matchId: string; content: string }): Promise<Message> => {
+    const response = await fetch(`/api/matches/${matchId}/messages`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      credentials: 'include',
+      body: JSON.stringify({ content }),
     });
 
-    if (!res.ok) {
-      throw new Error("Failed to fetch messages");
+    const text = await response.text();
+    try {
+      const data = JSON.parse(text);
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to send message');
+      }
+      return data;
+    } catch (e) {
+      if (!response.ok) {
+        throw new Error('Failed to send message');
+      }
+      throw e;
     }
-
-    return res.json() as Promise<Message[]>;
   };
+
+  const getMessages = async (matchId: string): Promise<Message[]> => {
+    try {
+      const response = await fetch(`/api/messages/${matchId}`, {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      // Handle various HTTP status codes
+      if (response.status === 401 || response.status === 403) {
+        // Clear any stale data and redirect to login
+        queryClient.clear();
+        window.location.href = '/login';
+        throw new Error('Please log in to continue');
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        // If we're not getting JSON back, something is wrong
+        console.error('Received non-JSON response:', contentType);
+        throw new Error('Invalid server response');
+      }
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        throw new Error(data.message || 'Failed to fetch messages');
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof Error) {
+        // Check for session timeout
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          window.location.href = '/login';
+          throw new Error('Session expired - Please log in again');
+        }
+        throw error;
+      }
+      throw new Error('Failed to fetch messages');
+    }
+  };
+
+  const getMatch = async (id: string): Promise<Match> => {
+    try {
+      const response = await fetch(`/api/matches/${id}`, {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json'
+        }
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        // Clear any stale data and redirect to login
+        queryClient.clear();
+        window.location.href = '/login';
+        throw new Error('Please log in to continue');
+      }
+
+      const contentType = response.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        console.error('Received non-JSON response:', contentType);
+        throw new Error('Invalid server response');
+      }
+
+      const data = await response.json();
+      
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Match not found');
+        }
+        throw new Error(data.message || 'Failed to fetch match');
+      }
+
+      return data;
+    } catch (error) {
+      if (error instanceof Error) {
+        // Check for network errors that might indicate session timeout
+        if (error.message.includes('Failed to fetch') || error.message.includes('NetworkError')) {
+          window.location.href = '/login';
+          throw new Error('Session expired - Please log in again');
+        }
+        throw error;
+      }
+      throw new Error('Failed to fetch match');
+    }
+  };
+
+  // Transform raw matches to Match type with interests
+  const matches = rawMatches ? rawMatches.map((user: ExtendedUser): Match => {
+    const interests = user.personalityTraits ? 
+      Object.entries(user.personalityTraits).map(([trait, score]): Interest => {
+        const traitMapping: Record<string, { name: string; category: Interest['category'] }> = {
+          extraversion: { name: "Social Activities", category: "personality" },
+          openness: { name: "Trying New Things", category: "personality" },
+          planning: { name: "Organized Activities", category: "personality" },
+          communication: { name: "Deep Conversations", category: "personality" },
+          values: { name: "Meaningful Connections", category: "value" },
+          sociability: { name: "Group Activities", category: "hobby" }
+        };
+
+        const mappedTrait = traitMapping[trait] || { name: trait, category: "personality" };
+        
+        return {
+          name: mappedTrait.name,
+          score: Math.round(score * 100),
+          category: mappedTrait.category
+        };
+      }).sort((a, b) => b.score - a.score)
+      : [];
+
+    return {
+      ...user,
+      interests,
+      avatar: user.avatar || "/default-avatar.png"
+    };
+  }) : [];
 
   return {
     matches,
     isLoading,
-    sendMessage: sendMessage.mutateAsync,
+    connect: connect.mutateAsync,
+    sendMessage,
     getMessages,
+    getMatch,
   };
 }

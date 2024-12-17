@@ -1,8 +1,8 @@
-import { CreateChatCompletionRequestMessage } from "openai";
+import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 const OPENAI_API_ENDPOINT = "https://api.openai.com/v1/chat/completions";
 
-export async function getChatCompletion(messages: CreateChatCompletionRequestMessage[]) {
+export async function getChatCompletion(messages: ChatCompletionMessageParam[]) {
   if (!process.env.OPENAI_API_KEY) {
     throw new Error("OPENAI_API_KEY is not set");
   }
@@ -37,20 +37,20 @@ export async function craftMessageFromSuggestion(
 ) {
   const messages = [
     {
-      role: "system",
+      role: "system" as const,
       content: `You are a friendly conversation assistant helping users craft natural, engaging messages for a friendship matching platform. 
       Your task is to create a natural, friendly message based on a conversation topic, considering both users' personality traits.
       The message should be casual, warm, and authentic - as if it's coming from a real person who wants to make friends.`
     },
     {
-      role: "user",
+      role: "user" as const,
       content: `Given these personality traits:
-      Your traits: ${Object.entries(userPersonality)
-        .map(([trait, score]) => `${trait}: ${score * 100}%`)
-        .join(", ")}
-      Match's traits: ${Object.entries(matchPersonality)
-        .map(([trait, score]) => `${trait}: ${score * 100}%`)
-        .join(", ")}
+      Your traits: ${Object.entries(userPersonality || {})
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join(", ") || "No traits available"}
+      Match's traits: ${Object.entries(matchPersonality || {})
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join(", ") || "No traits available"}
       
       Please craft a natural, friendly message based on this conversation starter: "${suggestion}"
       The message should be personal, engaging, and true to my personality traits.`
@@ -73,28 +73,28 @@ export async function generateConversationSuggestions(
   currentUserId: number
 ) {
   // Create a personality description based on traits
-  const userTraits = Object.entries(userPersonality)
-    .map(([trait, score]) => `${trait}: ${score * 100}%`)
-    .join(", ");
-  const matchTraits = Object.entries(matchPersonality)
-    .map(([trait, score]) => `${trait}: ${score * 100}%`)
-    .join(", ");
+  const userTraits = Object.entries(userPersonality || {})
+    .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+    .join(", ") || "No traits available";
+  const matchTraits = Object.entries(matchPersonality || {})
+    .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+    .join(", ") || "No traits available";
 
   // Format chat history
   const formattedHistory = chatHistory
     .map((msg) => `${msg.senderId === currentUserId ? "You" : "Match"}: ${msg.content}`)
     .join("\n");
 
-  const messages: CreateChatCompletionRequestMessage[] = [
+  const messages: ChatCompletionMessageParam[] = [
     {
-      role: "system",
+      role: "system" as const,
       content: `You are a conversation coach helping users on a friend matching platform. 
       Generate 3 natural, context-aware conversation suggestions that would help build a meaningful friendship.
       Consider both users' personality traits when making suggestions.
       Make suggestions casual and friendly, avoiding overly formal language.`,
     },
     {
-      role: "user",
+      role: "user" as const,
       content: `Your personality traits: ${userTraits}
       Match's personality traits: ${matchTraits}
       
@@ -111,7 +111,7 @@ export async function generateConversationSuggestions(
     const suggestions = completion
       .split(/\d\./)
       .filter(Boolean)
-      .map((s) => s.trim())
+      .map((s: string) => s.trim())
       .slice(0, 3);
 
     return suggestions;
@@ -132,20 +132,20 @@ export async function generateEventSuggestions(
 ) {
   const messages = [
     {
-      role: "system",
+      role: "system" as const,
       content: `You are an event suggestion assistant helping users find activities they might both enjoy based on their personality traits. 
       Suggest events and activities that would appeal to both users given their personality profiles.
       Keep suggestions practical, specific, and tailored to common interests.`
     },
     {
-      role: "user",
+      role: "user" as const,
       content: `Given these personality traits:
-      User 1 traits: ${Object.entries(userPersonality)
-        .map(([trait, score]) => `${trait}: ${score * 100}%`)
-        .join(", ")}
-      User 2 traits: ${Object.entries(matchPersonality)
-        .map(([trait, score]) => `${trait}: ${score * 100}%`)
-        .join(", ")}
+      User 1 traits: ${Object.entries(userPersonality || {})
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join(", ") || "No traits available"}
+      User 2 traits: ${Object.entries(matchPersonality || {})
+        .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+        .join(", ") || "No traits available"}
       
       Generate 3 specific event or activity suggestions that both users would enjoy doing together.
       Consider their personality compatibility and shared trait strengths.`
@@ -157,16 +157,19 @@ export async function generateEventSuggestions(
     const suggestions = completion
       .split(/\d\./)
       .filter(Boolean)
-      .map(s => s.trim())
+      .map((s: string) => ({
+        title: s.trim(),
+        description: ""
+      }))
       .slice(0, 3);
 
     return suggestions;
   } catch (error) {
     console.error("Error generating event suggestions:", error);
     return [
-      "Visit a local art gallery or museum together",
-      "Have coffee at a quiet café and chat",
-      "Take a walking tour of the city",
+      { title: "Visit a local art gallery or museum together", description: "" },
+      { title: "Have coffee at a quiet café and chat", description: "" },
+      { title: "Take a walking tour of the city", description: "" }
     ];
   }
 }

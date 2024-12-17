@@ -1,6 +1,33 @@
 import { useRef, useEffect, useState } from "react";
-import { ForceGraph2D } from "react-force-graph";
-import type { NodeObject, LinkObject } from "react-force-graph";
+import ForceGraph2D from "react-force-graph-2d";
+import type { ForceGraphMethods } from "react-force-graph-2d";
+import type { Match } from "../hooks/use-matches";
+
+// Define custom LinkObject interface
+interface CustomNodeObject {
+  id: string;
+  name: string;
+  val: number;
+  x?: number;
+  y?: number;
+  vx?: number;
+  vy?: number;
+  fx?: number | undefined;
+  fy?: number | undefined;
+  [key: string]: any;  // Needed for force-graph internal properties
+}
+
+interface CustomLinkObject {
+  source: CustomNodeObject;
+  target: CustomNodeObject;
+  value: number;
+}
+
+interface GraphData {
+  nodes: CustomNodeObject[];
+  links: CustomLinkObject[];
+}
+
 import { useMatches } from "../hooks/use-matches";
 import { useUser } from "../hooks/use-user";
 import { Card } from "@/components/ui/card";
@@ -17,36 +44,23 @@ function getComputedColor(variable: string, opacity: number = 1): string {
   return `hsla(${h}, ${s}%, ${l}%, ${opacity})`;
 }
 
-interface GraphData {
-  nodes: Array<{
-    id: string;
-    name: string;
-    val: number;
-  }>;
-  links: Array<{
-    source: string;
-    target: string;
-    value: number;
-  }>;
-}
-
 export function NetworkGraph() {
   const { matches, isLoading } = useMatches();
   const { user } = useUser();
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
-  const graphRef = useRef<ForceGraph2D>();
+  const graphRef = useRef<ForceGraphMethods<CustomNodeObject, CustomLinkObject>>();
 
   useEffect(() => {
     if (!matches || !user) return;
 
     // Create nodes for the current user and all matches
-    const nodes = [
+    const nodes: CustomNodeObject[] = [
       {
         id: user.id.toString(),
         name: user.name || user.username,
         val: 40, // Make current user node larger
       },
-      ...matches.map((match) => ({
+      ...matches.map((match: Match) => ({
         id: match.id.toString(),
         name: match.name || match.username,
         val: 30,
@@ -54,9 +68,9 @@ export function NetworkGraph() {
     ];
 
     // Create links between the current user and matches
-    const links = matches.map((match) => ({
-      source: user.id.toString(),
-      target: match.id.toString(),
+    const links: CustomLinkObject[] = matches.map((match: Match) => ({
+      source: nodes.find((node) => node.id === user.id.toString())!,
+      target: nodes.find((node) => node.id === match.id.toString())!,
       value: match.compatibilityScore / 100, // Normalize to 0-1
     }));
 
@@ -73,29 +87,29 @@ export function NetworkGraph() {
 
   return (
     <Card className="p-4 h-[400px] w-full bg-card">
-      <ForceGraph2D
+      <ForceGraph2D<CustomNodeObject, CustomLinkObject>
         ref={graphRef}
         graphData={graphData}
         nodeLabel="name"
-        nodeColor={(node: NodeObject) => {
+        nodeColor={(node: CustomNodeObject) => {
           return getComputedColor(
             '--primary',
             node.id === user?.id?.toString() ? 1 : 0.7
           );
         }}
-        linkColor={(link: LinkObject) => {
-          const value = (link as any).value;
+        linkColor={(link: CustomLinkObject) => {
+          const value = link.value;
           // Create gradient based on compatibility score
           return getComputedColor('--primary', Math.max(0.2, value));
         }}
-        linkWidth={(link: LinkObject) => {
-          const value = (link as any).value;
+        linkWidth={(link: CustomLinkObject) => {
+          const value = link.value;
           // Thicker lines for stronger connections
           return 2 + value * 6;
         }}
-        nodeCanvasObject={(node: NodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
-          const label = (node as any).name as string;
-          const nodeSize = ((node as any).val as number);
+        nodeCanvasObject={(node: CustomNodeObject, ctx: CanvasRenderingContext2D, globalScale: number) => {
+          const label = node.name as string;
+          const nodeSize = node.val;
           const fontSize = Math.min(nodeSize / 3, 14); // Limit font size
           
           // Draw node circle
