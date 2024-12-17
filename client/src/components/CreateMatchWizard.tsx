@@ -41,11 +41,12 @@ const wizardSchema = z.object({
 type WizardFormData = z.infer<typeof wizardSchema>;
 
 interface CreateMatchWizardProps {
+  initialMatchId: string | null;
   onComplete: () => void;
   onCancel: () => void;
 }
 
-export default function CreateMatchWizard({ onComplete, onCancel }: CreateMatchWizardProps) {
+export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel }: CreateMatchWizardProps) {
   const [step, setStep] = useState(1);
   const { user } = useUser();
   const { connect } = useMatches();
