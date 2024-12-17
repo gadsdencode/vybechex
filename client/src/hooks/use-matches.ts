@@ -170,7 +170,13 @@ export function useMatches() {
       
       if (!response.ok) {
         if (response.status === 404) {
-          throw new Error('Match not found');
+          // If match not found, try to create it
+          const newMatch = await connect({ id });
+          if (newMatch) {
+            // Retry fetching the newly created match
+            return getMatch(id);
+          }
+          throw new Error('Failed to create match');
         }
         throw new Error(data.message || 'Failed to fetch match');
       }
@@ -183,9 +189,12 @@ export function useMatches() {
           window.location.href = '/login';
           throw new Error('Session expired - Please log in again');
         }
-        throw error;
+        // If it's not a network error and not a 404, rethrow
+        if (!error.message.includes('Match not found')) {
+          throw error;
+        }
       }
-      throw new Error('Failed to fetch match');
+      throw new Error('Failed to fetch or create match');
     }
   };
 
