@@ -172,7 +172,7 @@ export function useMatches(): UseMatchesReturn {
         throw new Error('Invalid match ID format. Please provide a valid positive number.');
       }
 
-      const response = await fetch(`/api/matches/${id}`, {
+      const response = await fetch(`/api/matches/${matchId}`, {
         credentials: 'include',
         headers: {
           'Accept': 'application/json'
@@ -180,18 +180,34 @@ export function useMatches(): UseMatchesReturn {
       });
 
       if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error('Match not found. It may have been deleted or you may not have access.');
+        }
+        if (response.status === 401) {
+          throw new Error('Please log in to view match details.');
+        }
+        if (response.status === 403) {
+          throw new Error('Please complete your profile before viewing matches.');
+        }
+
         const errorData = await response.json().catch(() => ({ message: 'Server error' }));
-        throw new Error(errorData.message || response.statusText);
+        throw new Error(errorData.message || `Failed to fetch match: ${response.statusText}`);
       }
 
       const data = await response.json();
-      if (!data || typeof data !== 'object') {
-        throw new Error('Invalid match data received');
+      
+      // Validate required fields
+      if (!data?.id || !data?.status || !data?.personalityTraits) {
+        throw new Error('Invalid match data received from server');
       }
 
-      return {
-        ...data,
+      // Transform and validate the match data
+      const match: Match = {
+        id: matchId,
+        username: data.username,
+        name: data.name || data.username,
         personalityTraits: data.personalityTraits || {},
+        compatibilityScore: Math.min(100, Math.max(0, data.compatibilityScore || 0)),
         interests: Object.entries(data.personalityTraits || {})
           .filter(([trait, value]) => 
             trait in traitMapping && 
@@ -205,11 +221,14 @@ export function useMatches(): UseMatchesReturn {
             category: traitMapping[trait as keyof PersonalityTraits].category
           }))
           .sort((a, b) => b.score - a.score),
+        status: data.status,
         avatar: data.avatar || "/default-avatar.png",
-        compatibilityScore: Math.min(100, Math.max(0, data.compatibilityScore || 0))
+        createdAt: data.createdAt
       };
+
+      return match;
     } catch (error) {
-      return handleApiError(error, "Failed to Fetch Match");
+      return handleApiError(error, "Failed to Fetch Match", "Unable to load match details. Please try again later.");
     }
   };
 

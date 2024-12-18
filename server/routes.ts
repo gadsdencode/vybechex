@@ -181,7 +181,7 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get a single match by ID
+  // Get a single match by ID with proper validation and error handling
   app.get("/api/matches/:id", requireAuth, async (req, res) => {
     try {
       if (!req.user) {
@@ -197,13 +197,34 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
+      // First check if the match exists and user has access
+      const [matchExists] = await db
+        .select({ id: matches.id })
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
+            )
+          )
+        )
+        .limit(1);
+
+      if (!matchExists) {
+        return res.status(404).json({
+          message: "Match not found. It may have been deleted or you may not have access."
+        });
+      }
+
       if (!user.personalityTraits || Object.keys(user.personalityTraits).length === 0) {
         return res.status(403).json({ 
           message: "Please complete your personality profile before viewing matches." 
         });
       }
 
-      // Fetch match details
+      // Fetch full match details
       const [matchDetails] = await db
         .select({
           match: {
@@ -221,15 +242,7 @@ export function registerRoutes(app: Express): Server {
           }
         })
         .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
-            )
-          )
-        )
+        .where(eq(matches.id, matchId))
         .leftJoin(
           users,
           eq(users.id,
