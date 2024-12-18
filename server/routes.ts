@@ -784,55 +784,108 @@ export function registerRoutes(app: Express): Server {
   // Get match requests
   app.get("/api/matches/requests", requireAuth, async (req, res) => {
     try {
+      console.log('Match requests endpoint - Start');
       const user = req.user as SelectUser;
-      if (!user?.id || typeof user.id !== 'number') {
-        console.log('Invalid user ID:', user?.id, typeof user?.id);
-        return sendError(res, 401, "User not authenticated");
+      
+      // Detailed user validation logging
+      console.log('User object:', {
+        id: user?.id,
+        type: typeof user?.id,
+        authenticated: req.isAuthenticated(),
+        hasUser: !!user
+      });
+
+      // Enhanced user validation
+      if (!user) {
+        console.log('No user object found');
+        return sendError(res, 401, "Authentication required");
       }
 
+      if (!user.id) {
+        console.log('User object has no ID');
+        return sendError(res, 401, "Invalid user session");
+      }
+
+      if (typeof user.id !== 'number' || isNaN(user.id) || user.id <= 0) {
+        console.log('Invalid user ID format:', user.id);
+        return sendError(res, 400, "Invalid user ID format");
+      }
+
+      console.log('User validation passed, proceeding with match requests query');
+
       // Get all matches where the current user is the recipient (userId2) and status is 'requested'
-      try {
-        const matchRequests = await db
-          .select({
-            match: matches,
-            requester: users
-          })
-          .from(matches)
-          .where(
-            and(
-              eq(matches.userId2, user.id),
-              eq(matches.status, 'requested')
-            )
+      const matchRequests = await db
+        .select({
+          match: matches,
+          requester: users
+        })
+        .from(matches)
+        .where(
+          and(
+            eq(matches.userId2, user.id),
+            eq(matches.status, 'requested')
           )
+        )
         .innerJoin(users, eq(matches.userId1, users.id))
         .orderBy(desc(matches.createdAt));
 
       // Format the response
-      const formattedRequests = matchRequests.map(request => ({
-        id: request.match.id,
-        requester: {
-          id: request.requester.id,
-          username: request.requester.username,
-          name: request.requester.name,
-          avatar: request.requester.avatar || "/default-avatar.png",
-          personalityTraits: request.requester.personalityTraits || {},
-          createdAt: request.requester.createdAt
-        },
-        status: request.match.status,
-        createdAt: request.match.createdAt
-      }));
+      console.log('Successfully fetched match requests:', {
+        count: matchRequests.length,
+        sample: matchRequests[0] ? {
+          matchId: matchRequests[0].match.id,
+          requesterId: matchRequests[0].requester.id
+        } : null
+      });
+
+      const formattedRequests = matchRequests.map(request => {
+        const formatted = {
+          id: request.match.id,
+          requester: {
+            id: request.requester.id,
+            username: request.requester.username,
+            name: request.requester.name || request.requester.username,
+            avatar: request.requester.avatar || "/default-avatar.png",
+            personalityTraits: request.requester.personalityTraits || {},
+            createdAt: request.requester.createdAt
+          },
+          status: request.match.status,
+          createdAt: request.match.createdAt
+        };
+        
+        return formatted;
+      });
+
+      console.log('Formatted requests:', {
+        count: formattedRequests.length,
+        sample: formattedRequests[0] ? {
+          id: formattedRequests[0].id,
+          requesterId: formattedRequests[0].requester.id
+        } : null
+      });
 
       return sendSuccess(res, { requests: formattedRequests });
     } catch (error) {
-      console.error("Error fetching match requests:", error);
+      console.error("Error in match requests:", {
+        error,
+        message: error instanceof Error ? error.message : 'Unknown error',
+        stack: error instanceof Error ? error.stack : undefined,
+        userId: user?.id
+      });
+
       if (error instanceof Error) {
+        // Database-related errors
+        if (error.message.includes('relation') || error.message.includes('column')) {
+          return sendError(res, 500, "Database error", error.message);
+        }
+        // Other known errors
         return sendError(res, 500, "Failed to fetch match requests", error.message);
       }
+      
       return sendError(res, 500, "Failed to fetch match requests", "Unknown error occurred");
+    } finally {
+      console.log('Match requests operation completed for user:', user?.id);
     }
-  } finally {
-    console.log('Match requests operation completed');
-  }
   });
 
   // Get AI conversation suggestions
