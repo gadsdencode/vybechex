@@ -140,7 +140,7 @@ export default function Matches() {
               <h2 className="text-2xl font-semibold mb-6 text-center">Your Match Cards</h2>
               <div 
                 ref={cardsRef} 
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 min-h-[200px] relative"
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-h-[200px] relative px-2"
               >
                 {matches.map((match) => (
                   <div key={match.id} className="opacity-100">
