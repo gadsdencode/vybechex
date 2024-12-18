@@ -4,6 +4,7 @@ import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MessageCircle, UserPlus, Zap, Loader2, User, Heart, Star } from 'lucide-react';
+import { MatchInsightTooltip } from './MatchInsightTooltip';
 import { useMatches } from '@/hooks/use-matches';
 import { Link, useLocation } from "wouter";
 import { toast } from "@/hooks/use-toast";
@@ -126,10 +127,17 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
             <h3 className="text-lg font-semibold">{match.name || "Anonymous"}</h3>
             <div className="flex items-center gap-2">
               {getStatusBadge()}
-              <Badge variant="secondary" className="flex items-center gap-1">
-                <Zap className="h-3 w-3" />
-                {Math.round(match.compatibilityScore || match.score || 0)}% Match
-              </Badge>
+              <div className="flex items-center gap-1">
+                <Badge variant="secondary" className="flex items-center gap-1">
+                  <Zap className="h-3 w-3" />
+                  {Math.round(match.compatibilityScore || match.score || 0)}% Match
+                </Badge>
+                <MatchInsightTooltip
+                  personalityTraits={match.personalityTraits}
+                  compatibilityScore={match.compatibilityScore || match.score || 0}
+                  scoreBreakdown={match.scoreBreakdown}
+                />
+              </div>
             </div>
           </div>
           <div className="space-y-1 mt-1">
