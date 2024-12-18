@@ -51,12 +51,13 @@ export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
   // Standardized error response
-  const sendError = (res: Response, status: number, message: string, details?: any, id?: number) => {
+  const sendError = (res: Response, status: number, message: string, details?: any) => {
     const response = {
       success: false,
       message,
       ...(details && { details }),
-      ...(app.get('env') === 'development' && { debug: details })
+      ...(app.get('env') === 'development' && { debug: details }),
+      timestamp: new Date().toISOString()
     };
     return res.status(status).json(response);
   };
@@ -630,15 +631,22 @@ export function registerRoutes(app: Express): Server {
   });
 
   // Accept or reject a match request
-  app.patch("/api/matches/:matchId", requireAuth, async (req, res) => {
+  app.post("/api/matches/:matchId", requireAuth, async (req, res) => {
     try {
       const user = req.user as SelectUser;
       const { status } = req.body;
       
+      // Validate user authentication
+      if (!user?.id) {
+        return sendError(res, 401, "Authentication required");
+      }
+      
+      // Validate status
       if (!status || !['accepted', 'rejected'].includes(status)) {
         return sendError(res, 400, "Invalid status. Must be either 'accepted' or 'rejected'.");
       }
 
+      // Validate and parse match ID
       const matchId = parseInt(req.params.matchId);
       if (isNaN(matchId) || matchId <= 0) {
         return sendError(res, 400, "Invalid match ID format. Please provide a valid positive number.");

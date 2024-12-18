@@ -181,7 +181,7 @@ export function NetworkGraph() {
           // Draw node circle
           ctx.fillStyle = getComputedColor(
             '--primary',
-            node.id === user.id.toString() ? 1 : 0.7
+            node.id === (user?.id?.toString() ?? '') ? 1 : 0.7
           );
           ctx.beginPath();
           ctx.arc(node.x!, node.y!, nodeSize / 2, 0, 2 * Math.PI);
