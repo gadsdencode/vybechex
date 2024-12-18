@@ -196,19 +196,37 @@ export function useMatches(): UseMatchesReturn {
       });
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to fetch match details" }));
-        throw new Error(errorData.message || "Failed to fetch match details");
+        const errorText = await response.text();
+        let errorMessage: string;
+        
+        try {
+          const errorData = JSON.parse(errorText);
+          errorMessage = errorData.message || "Failed to fetch match details";
+        } catch {
+          errorMessage = errorText || "Failed to fetch match details";
+        }
+
+        console.error('Match fetch failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          errorMessage
+        });
+        
+        throw new Error(errorMessage);
       }
 
       const data = await response.json();
       
       if (!data || typeof data !== 'object') {
+        console.error('Invalid match data:', data);
         throw new Error('Invalid match data received from server');
       }
 
+      console.log('Match data received:', data);
+
       // Transform and validate the match data with default values
       return {
-        id: data.id,
+        id: matchId,
         username: data.username || 'Unknown User',
         name: data.name || data.username || 'Unknown User',
         personalityTraits: data.personalityTraits || {},
@@ -231,9 +249,14 @@ export function useMatches(): UseMatchesReturn {
         createdAt: data.createdAt || new Date().toISOString()
       };
     } catch (error) {
-      console.error('Match fetching error:', error);
-      handleApiError(error, "Failed to Fetch Match");
-      throw error; // Won't be reached as handleApiError throws
+      // Add more context to the error
+      const enhancedError = new Error(
+        error instanceof Error 
+          ? `Match fetch failed: ${error.message}`
+          : 'Failed to fetch match details'
+      );
+      console.error('Match fetching error:', enhancedError);
+      throw enhancedError;
     }
   };
 

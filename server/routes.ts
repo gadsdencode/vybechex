@@ -187,13 +187,29 @@ export function registerRoutes(app: Express): Server {
       const user = req.user as SelectUser;
       const matchId = parseInt(req.params.id);
       
+      console.log('Fetching match:', { matchId, userId: user.id });
+      
       if (isNaN(matchId) || matchId <= 0) {
         return res.status(400).json({ 
           message: "Invalid match ID. Please provide a valid positive number." 
         });
       }
 
-      // Get match with both users' information in a single query
+      // First check if the match exists at all
+      const [matchExists] = await db
+        .select({ id: matches.id })
+        .from(matches)
+        .where(eq(matches.id, matchId))
+        .limit(1);
+
+      if (!matchExists) {
+        console.log('Match not found:', { matchId });
+        return res.status(404).json({ 
+          message: "Match not found" 
+        });
+      }
+
+      // Then get match with both users' information in a single query
       const [matchWithUsers] = await db
         .select({
           match: {
@@ -231,11 +247,25 @@ export function registerRoutes(app: Express): Server {
         )
         .limit(1);
 
-      if (!matchWithUsers || !matchWithUsers.matchUser) {
-        return res.status(404).json({ 
-          message: "Match not found or you don't have access to view it" 
+      if (!matchWithUsers) {
+        console.log('User not authorized:', { matchId, userId: user.id });
+        return res.status(403).json({ 
+          message: "You don't have access to view this match" 
         });
       }
+
+      if (!matchWithUsers.matchUser) {
+        console.log('Match user not found:', { matchId, matchWithUsers });
+        return res.status(404).json({ 
+          message: "Match user details not found" 
+        });
+      }
+
+      console.log('Match found:', { 
+        matchId, 
+        userId: user.id,
+        matchStatus: matchWithUsers.match.status 
+      });
 
       const { match, matchUser } = matchWithUsers;
 
