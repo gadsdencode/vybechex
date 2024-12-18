@@ -674,7 +674,12 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/matches/requests", requireAuth, async (req, res) => {
     try {
       const user = req.user as SelectUser;
-      if (!user?.id || isNaN(user.id)) {
+      if (!user?.id) {
+        return sendError(res, 401, "User not authenticated");
+      }
+      
+      const userId = Number(user.id);
+      if (isNaN(userId) || userId <= 0) {
         return sendError(res, 400, "Invalid user ID format");
       }
       

@@ -119,8 +119,8 @@ export function useMatches(): UseMatchesReturn {
     queryFn: async () => {
       try {
         const userId = getUserId();
-        if (!userId) {
-          console.log('Missing user ID');
+        if (!userId || typeof userId !== 'number') {
+          console.log('Invalid or missing user ID');
           return [];
         }
 
@@ -132,12 +132,12 @@ export function useMatches(): UseMatchesReturn {
           }
         });
 
-        if (response.status === 401) {
-          console.log('Unauthorized request');
-          return [];
-        }
-
         if (!response.ok) {
+          if (response.status === 401) {
+            console.log('Unauthorized request');
+            return [];
+          }
+
           const errorData = await response.json().catch(() => ({ 
             message: `Request failed with status ${response.status}` 
           }));
