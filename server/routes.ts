@@ -184,22 +184,25 @@ export function registerRoutes(app: Express): Server {
   // Get a single match by ID with proper validation and error handling
   app.get("/api/matches/:id", requireAuth, async (req, res) => {
     try {
-      if (!req.user) {
-        return res.status(401).json({ message: "Authentication required" });
-      }
-
-      const user = req.user;
+      const user = req.user as SelectUser;
       const matchId = parseInt(req.params.id);
-
+      
       if (isNaN(matchId) || matchId <= 0) {
         return res.status(400).json({ 
           message: "Invalid match ID. Please provide a valid positive number." 
         });
       }
 
-      // First check if the match exists and user has access
-      const [matchExists] = await db
-        .select({ id: matches.id })
+      // First verify the user has completed their profile
+      if (!user.personalityTraits || Object.keys(user.personalityTraits).length === 0) {
+        return res.status(403).json({ 
+          message: "Please complete your personality profile before viewing matches." 
+        });
+      }
+
+      // Then verify the user has access to this match
+      const [existingMatch] = await db
+        .select()
         .from(matches)
         .where(
           and(
@@ -212,15 +215,9 @@ export function registerRoutes(app: Express): Server {
         )
         .limit(1);
 
-      if (!matchExists) {
-        return res.status(404).json({
-          message: "Match not found. It may have been deleted or you may not have access."
-        });
-      }
-
-      if (!user.personalityTraits || Object.keys(user.personalityTraits).length === 0) {
-        return res.status(403).json({ 
-          message: "Please complete your personality profile before viewing matches." 
+      if (!existingMatch) {
+        return res.status(404).json({ 
+          message: "Match not found or you don't have access to view it" 
         });
       }
 
@@ -418,13 +415,13 @@ export function registerRoutes(app: Express): Server {
         return res.status(403).json({ message: "Match must be accepted to view messages" });
       }
 
-      const messages = await db
+      const messageList = await db
         .select()
         .from(messages)
         .where(eq(messages.matchId, matchId))
-        .orderBy(messages.createdAt);
+        .orderBy(desc(messages.createdAt));
 
-      res.json(messages);
+      res.json(messageList);
     } catch (error) {
       console.error("Error fetching messages:", error);
       res.status(500).json({ 

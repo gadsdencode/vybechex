@@ -195,48 +195,34 @@ export function useMatches(): UseMatchesReturn {
         }
       });
 
-      let errorData;
-      try {
-        errorData = await response.json();
-      } catch (e) {
-        errorData = { message: 'Server error' };
-      }
+      const data = await response.json().catch(() => null);
 
-      if (!response.ok) {
-        let errorMessage = '';
-        switch (response.status) {
-          case 401:
-            errorMessage = 'Please log in to view match details.';
-            break;
-          case 403:
-            errorMessage = 'Please complete your profile before viewing matches.';
-            break;
-          case 404:
-            errorMessage = 'Match not found. It may have been deleted or you may not have access.';
-            break;
-          default:
-            errorMessage = errorData.message || `Failed to fetch match: ${response.statusText}`;
+      if (!response.ok || !data) {
+        let errorMessage = 'Failed to fetch match details';
+        
+        if (data?.message) {
+          errorMessage = data.message;
+        } else {
+          switch (response.status) {
+            case 401:
+              errorMessage = 'Please log in to view match details';
+              break;
+            case 403:
+              errorMessage = 'Please complete your profile before viewing matches';
+              break;
+            case 404:
+              errorMessage = 'Match not found or you may not have access';
+              break;
+            default:
+              errorMessage = `Server error: ${response.statusText}`;
+          }
         }
+        
         throw new Error(errorMessage);
       }
 
-      const data = errorData; // We already parsed the response
-
-      if (!data) {
-        throw new Error('No data received from server');
-      }
-
-      // Validate required fields
-      if (!data.id || typeof data.id !== 'number') {
-        throw new Error('Invalid match ID received from server');
-      }
-
-      if (!data.status || !['requested', 'pending', 'accepted', 'rejected'].includes(data.status)) {
-        throw new Error('Invalid match status received from server');
-      }
-
       // Transform and validate the match data
-      const match: Match = {
+      return {
         id: data.id,
         username: data.username || 'Unknown User',
         name: data.name || data.username || 'Unknown User',
@@ -255,17 +241,14 @@ export function useMatches(): UseMatchesReturn {
             category: traitMapping[trait as keyof PersonalityTraits].category
           }))
           .sort((a, b) => b.score - a.score),
-        status: data.status,
+        status: data.status || 'pending',
         avatar: data.avatar || "/default-avatar.png",
         createdAt: data.createdAt || new Date().toISOString()
       };
-
-      return match;
     } catch (error) {
       console.error('Match fetching error:', error);
-      // Don't return from handleApiError, let it throw
-      handleApiError(error, "Failed to Fetch Match", "Unable to load match details. Please try again later.");
-      throw error; // This line won't be reached due to handleApiError throwing
+      handleApiError(error, "Failed to Fetch Match");
+      throw error; // Won't be reached as handleApiError throws
     }
   };
 

@@ -49,33 +49,47 @@ export function NetworkGraph() {
   const { matches, isLoading } = useMatches();
   const { user } = useUser();
   const [graphData, setGraphData] = useState<GraphData>({ nodes: [], links: [] });
+  const [error, setError] = useState<string | null>(null);
   const graphRef = useRef<ForceGraphMethods<CustomNodeObject, CustomLinkObject>>();
 
   useEffect(() => {
-    if (!matches || !user) return;
+    try {
+      if (!user) {
+        setError("Please log in to view your network");
+        return;
+      }
+      
+      if (!matches) {
+        setError("Unable to load matches");
+        return;
+      }
 
-    // Create nodes for the current user and all matches
-    const nodes: CustomNodeObject[] = [
-      {
-        id: user.id.toString(),
-        name: user.name || user.username,
-        val: 40, // Make current user node larger
-      },
-      ...matches.map((match: Match) => ({
-        id: match.id.toString(),
-        name: match.name || match.username,
-        val: 30,
-      })),
-    ];
+      // Create nodes for the current user and all matches
+      const nodes: CustomNodeObject[] = [
+        {
+          id: user.id.toString(),
+          name: user.name || user.username,
+          val: 40, // Make current user node larger
+        },
+        ...matches.map((match: Match) => ({
+          id: match.id.toString(),
+          name: match.name || match.username,
+          val: 30,
+        })),
+      ];
 
-    // Create links between the current user and matches
-    const links: CustomLinkObject[] = matches.map((match: Match) => ({
-      source: nodes.find((node) => node.id === user.id.toString())!,
-      target: nodes.find((node) => node.id === match.id.toString())!,
-      value: match.compatibilityScore / 100, // Normalize to 0-1
-    }));
+      // Create links between the current user and matches
+      const links: CustomLinkObject[] = matches.map((match: Match) => ({
+        source: nodes.find((node) => node.id === user.id.toString())!,
+        target: nodes.find((node) => node.id === match.id.toString())!,
+        value: match.compatibilityScore / 100, // Normalize to 0-1
+      }));
 
-    setGraphData({ nodes, links });
+      setGraphData({ nodes, links });
+    } catch (error) {
+      console.error("Error building network graph:", error);
+      setError("Failed to build network visualization");
+    }
   }, [matches, user]);
 
   if (isLoading) {
