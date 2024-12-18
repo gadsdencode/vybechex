@@ -105,12 +105,20 @@ export function useMatches(): UseMatchesReturn {
     queryKey: ['matches'],
     queryFn: async () => {
       try {
-        const response = await fetch('/api/matches');
+        const response = await fetch('/api/matches', {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${getAuthToken()}`
+          }
+        });
         if (!response.ok) {
           throw new Error('Failed to fetch matches');
         }
+        console.log('Matches response:', await response.clone().json());
         const data = await response.json();
-        return data.matches || [];
+        // The server returns the matches array directly
+        return Array.isArray(data) ? data : [];
       } catch (error) {
         console.error('Match fetch error:', error);
         throw error;
