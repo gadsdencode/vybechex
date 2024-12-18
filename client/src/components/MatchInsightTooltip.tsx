@@ -60,7 +60,11 @@ export function MatchInsightTooltip({
             <Info className="h-4 w-4" />
           </Button>
         </TooltipTrigger>
-        <TooltipContent className="w-80 p-4">
+        <TooltipContent 
+          className="w-80 p-4 z-50 max-h-[300px] overflow-y-auto"
+          side="right"
+          sideOffset={5}
+        >
           <div className="space-y-2">
             <h4 className="font-semibold">{getCompatibilityInsight()}</h4>
             
@@ -73,11 +77,26 @@ export function MatchInsightTooltip({
             {scoreBreakdown && (
               <div className="mt-2">
                 <p className="text-sm font-medium">Compatibility Breakdown:</p>
-                <ul className="text-sm text-muted-foreground mt-1">
-                  <li>Personality: {scoreBreakdown.components.personality}%</li>
-                  <li>Communication: {scoreBreakdown.components.communication}%</li>
-                  <li>Social: {scoreBreakdown.components.social}%</li>
-                </ul>
+                <div className="max-h-[200px] overflow-y-auto pr-2">
+                  <ul className="text-sm text-muted-foreground mt-1 space-y-1">
+                    <li className="flex justify-between">
+                      <span>Personality:</span>
+                      <span>{scoreBreakdown.components.personality}%</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span>Communication:</span>
+                      <span>{scoreBreakdown.components.communication}%</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span>Social:</span>
+                      <span>{scoreBreakdown.components.social}%</span>
+                    </li>
+                    <li className="flex justify-between">
+                      <span>Activity:</span>
+                      <span>{scoreBreakdown.components.activity}%</span>
+                    </li>
+                  </ul>
+                </div>
               </div>
             )}
           </div>
