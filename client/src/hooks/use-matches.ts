@@ -136,18 +136,11 @@ export function useMatches(): UseMatchesReturn {
           console.log('Unauthorized request');
           return [];
         }
-        
-        if (response.status === 401) {
-          throw new Error('Unauthorized access');
-        }
-        
+
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || `Request failed with status ${response.status}`);
-        }
-        
-        if (!response.ok) {
-          const errorData = await response.json();
+          const errorData = await response.json().catch(() => ({ 
+            message: `Request failed with status ${response.status}` 
+          }));
           console.error('Match request error:', errorData);
           toast({
             title: "Error fetching match requests",
