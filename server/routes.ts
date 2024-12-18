@@ -109,11 +109,11 @@ export function registerRoutes(app: Express): Server {
         return sendError(res, 401, "Invalid user data");
       }
 
-      // Additional user data validation with more permissive checks
-      if (typeof user.id !== 'number') {
-        console.error("[Auth] Invalid user ID type:", {
+      // Additional user data validation
+      if (user.id <= 0 || !Number.isInteger(user.id)) {
+        console.error("[Auth] Invalid user ID format:", {
           userId: user.id,
-          type: typeof user.id
+          isInteger: Number.isInteger(user.id)
         });
         return sendError(res, 400, "Invalid user ID format");
       }
@@ -749,28 +749,21 @@ export function registerRoutes(app: Express): Server {
         return sendError(res, 401, "Invalid session. Please log in again.");
       }
 
-      // Parse and validate user ID with more permissive type checking
-      let userId: number;
-      try {
-        // Handle both string and number types
-        userId = typeof user.id === 'string' ? parseInt(user.id, 10) : Number(user.id);
-        
-        if (isNaN(userId)) {
-          throw new Error('Invalid ID conversion');
-        }
+      // Validate user ID with detailed logging
+      const userId = user.id;
+      console.log("[Match Requests] Processing request for user:", {
+        id: userId,
+        type: typeof userId,
+        session: !!req.session,
+        personalityTraits: !!user.personalityTraits
+      });
 
-        // Log successful ID conversion
-        console.log("[Match Requests] Successfully parsed user ID:", {
-          originalId: user.id,
-          parsedId: userId,
-          originalType: typeof user.id,
-          parsedType: typeof userId
-        });
-      } catch (error) {
-        console.error("[Match Requests] Failed to parse user ID:", {
-          id: user.id,
-          type: typeof user.id,
-          error: error instanceof Error ? error.message : 'Unknown error'
+      // Additional validation for user ID
+      if (typeof userId !== 'number' || userId <= 0 || !Number.isInteger(userId)) {
+        console.error("[Match Requests] Invalid user ID:", {
+          id: userId,
+          type: typeof userId,
+          isInteger: Number.isInteger(userId)
         });
         return sendError(res, 400, "Invalid user ID format");
       }
