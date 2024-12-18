@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient, UseQueryResult, UseMutationResult } from "@tanstack/react-query";
 import type { SelectUser as User } from "@db/schema";
 import { toast } from "./use-toast";
+import { getAuthToken, getUserId } from '@/utils/auth';
 
 export interface Interest {
   name: string;
@@ -31,9 +32,8 @@ export interface ExtendedUser {
   createdAt: string;
 }
 
-export interface Match extends Omit<ExtendedUser, 'personalityTraits'> {
-  personalityTraits: Record<string, number>;
-  score?: number;
+export interface Match {
+  id: number;
   requester?: {
     id: number;
     username: string;
@@ -42,6 +42,10 @@ export interface Match extends Omit<ExtendedUser, 'personalityTraits'> {
     personalityTraits: Record<string, number>;
     createdAt: string;
   };
+  status: 'requested' | 'accepted' | 'rejected';
+  createdAt: string;
+  score?: number;
+  compatibilityScore?: number;
 }
 
 interface Message {
@@ -74,7 +78,7 @@ interface UseMatchesReturn {
   isResponding: boolean;
   connect: (params: { id: string }) => Promise<Match>;
   getMessages: (matchId: string) => Promise<Message[]>;
-  getMatch: (id: string) => Promise<MatchProfile>;
+  getMatch: (id: string | number) => Promise<MatchProfile>;
   initiateMatch: (targetId: string) => Promise<Match>;
   useMatchMessages: (matchId: number) => UseQueryResult<Message[], Error>;
   useSendMessage: () => UseMutationResult<Message, Error, { matchId: number; content: string }>;
@@ -93,163 +97,128 @@ const handleApiError = (error: unknown, prefix: string = "API Error"): never => 
 export function useMatches(): UseMatchesReturn {
   const queryClient = useQueryClient();
 
-  const { data: matches = [], isLoading } = useQuery<Match[]>({
-    queryKey: ["matches"],
+  const { data: matches = [], isLoading: isLoadingMatches } = useQuery({
+    queryKey: ['matches'],
     queryFn: async () => {
       try {
-        const response = await fetch("/api/matches", {
-          credentials: 'include'
-        });
-
+        const response = await fetch('/api/matches');
         if (!response.ok) {
-          const errorData = await response.json().catch(() => ({ message: "Failed to fetch matches" }));
-          throw new Error(errorData.message);
+          throw new Error('Failed to fetch matches');
         }
-
         const data = await response.json();
-        console.log('Matches response:', data);
-
-        if (!Array.isArray(data)) {
-          console.error('Expected array but got:', typeof data, data);
-          if (data?.data && Array.isArray(data.data)) {
-            return data.data;
-          }
-          throw new Error('Invalid response format: expected an array');
-        }
-        
-        return data;
+        return data.matches || [];
       } catch (error) {
-        return handleApiError(error, "Failed to Load Matches");
+        console.error('Match fetch error:', error);
+        throw error;
       }
     }
   });
 
-  const { data: requests = [], isLoading: isLoadingRequests } = useQuery<Match[]>({
-    queryKey: ["match-requests"],
+  const { data: requests = [], isLoading: isLoadingRequests } = useQuery({
+    queryKey: ['match-requests'],
     queryFn: async () => {
       try {
-        const response = await fetch("/api/matches/requests", {
+        const userId = getUserId();
+        if (!userId) {
+          console.log('User ID not found');
+          return [];
+        }
+
+        const response = await fetch('/api/matches/requests', {
           credentials: 'include',
           headers: {
-            'Accept': 'application/json',
-            'Content-Type': 'application/json'
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${getAuthToken()}`
           }
         });
 
+        if (response.status === 401) {
+          console.log('Unauthorized request');
+          return [];
+        }
+        
+        if (response.status === 401) {
+          throw new Error('Unauthorized access');
+        }
+        
         if (!response.ok) {
-          const errorData = await response.json().catch(() => null);
-          if (response.status === 401) {
-            console.error("User not authenticated");
-            throw new Error("Please log in to view match requests");
-          }
-          if (response.status === 400) {
-            console.error("Invalid user ID format", errorData);
-            throw new Error("Invalid user ID format");
-          }
-          console.error("Failed to fetch match requests", errorData);
-          throw new Error(errorData?.message || "Failed to fetch match requests");
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || `Request failed with status ${response.status}`);
+        }
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          console.error('Match request error:', errorData);
+          toast({
+            title: "Error fetching match requests",
+            description: errorData.message || "Failed to fetch match requests",
+            variant: "destructive"
+          });
+          return [];
         }
 
         const data = await response.json();
-        console.log('Matches response:', data);
-
-        if (!data || typeof data !== 'object') {
-          throw new Error('Invalid response format');
-        }
-
-        // Handle both direct array response and wrapped response
-        const matchesData = Array.isArray(data) ? data : (data.data || []);
-        
-        if (!Array.isArray(matchesData)) {
-          throw new Error('Invalid matches data format');
-        }
-
-        // Validate and transform each match
-        return matchesData.map(match => ({
-          id: match.id,
-          username: match.username || '',
-          name: match.name || match.username || '',
-          personalityTraits: match.personalityTraits || {},
-          compatibilityScore: typeof match.compatibilityScore === 'number' ? match.compatibilityScore : (match.score || 0),
-          interests: match.interests || [],
-          status: match.status || 'requested',
-          avatar: match.avatar || '/default-avatar.png',
-          score: match.score || 0,
-          createdAt: match.createdAt || new Date().toISOString(),
-          requester: match.requester ? {
-            id: match.requester.id,
-            username: match.requester.username || '',
-            name: match.requester.name || match.requester.username || '',
-            avatar: match.requester.avatar || '/default-avatar.png',
-            personalityTraits: match.requester.personalityTraits || {},
-            createdAt: match.requester.createdAt || match.createdAt || new Date().toISOString()
-          } : undefined
-        }));
+        return data.requests || [];
       } catch (error) {
         console.error('Match request error:', error);
-        return handleApiError(error, "Failed to Load Match Requests");
+        toast({
+          title: "Error fetching match requests",
+          description: error instanceof Error ? error.message : "An unexpected error occurred",
+          variant: "destructive"
+        });
+        return [];
       }
     },
-    retry: (failureCount, error) => {
-      if (error instanceof Error && error.message.includes("Please log in")) {
-        return false;
-      }
-      return failureCount < 2;
-    }
+    retry: 1,
+    retryDelay: 1000,
+    staleTime: 30000 // Cache for 30 seconds
   });
+  
+  const { mutate: respondToMatch, isPending: isResponding } = useMutation({
+    mutationFn: async ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => {
+      try {
+        const response = await fetch(`/api/matches/${matchId}/respond`, {
+          method: 'POST',
+          credentials: 'include',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${getAuthToken()}`
+          },
+          body: JSON.stringify({ status })
+        });
 
-  const { mutate: mutateMatch, isPending: isResponding } = useMutation<
-    Match,
-    Error,
-    { matchId: number; status: 'accepted' | 'rejected' }
-  >({
-    mutationFn: async ({ matchId, status }) => {
-      const response = await fetch(`/api/matches/${matchId}`, {
-        method: 'PATCH',
-        headers: { 
-          "Content-Type": "application/json",
-          "Accept": "application/json"
-        },
-        credentials: 'include',
-        body: JSON.stringify({ status }),
-      });
+        if (response.status === 401) {
+          throw new Error('Unauthorized access');
+        }
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to respond to match request" }));
-        throw new Error(errorData.message);
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => ({}));
+          throw new Error(errorData.message || 'Failed to respond to match request');
+        }
+
+        const data = await response.json();
+        return data;
+      } catch (error) {
+        console.error('Match response error:', error);
+        throw error;
       }
-
-      return response.json();
     },
-    onSuccess: (data, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['match-requests'] });
-      
       toast({
-        title: variables.status === 'accepted' 
-          ? 'Match request accepted!'
-          : 'Match request rejected',
-        description: variables.status === 'accepted'
-          ? 'You can now start chatting with your new match.'
-          : 'The match request has been declined.',
-        variant: "default",
-        duration: 5000,
+        title: "Success",
+        description: "Match request response sent successfully",
+        variant: "default"
       });
     },
     onError: (error) => {
-      console.error('Error responding to match:', error);
       toast({
-        title: "Failed to respond to match request",
-        description: error.message,
-        variant: "destructive",
-        duration: 5000,
+        title: "Error",
+        description: error instanceof Error ? error.message : "Failed to respond to match request",
+        variant: "destructive"
       });
     }
   });
-
-  const respondToMatch = ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => {
-    mutateMatch({ matchId, status });
-  };
 
   const connect = async ({ id }: { id: string }): Promise<Match> => {
     try {
@@ -297,13 +266,13 @@ export function useMatches(): UseMatchesReturn {
     }
   };
 
-  const getMatch = async (id: string): Promise<MatchProfile> => {
+  const getMatch = async (id: string | number): Promise<MatchProfile> => {
     try {
-      if (!id?.trim()) {
+      if (!id) {
         throw new Error('Match ID is required');
       }
 
-      const matchId = parseInt(id);
+      const matchId = typeof id === 'string' ? parseInt(id) : id;
       if (isNaN(matchId) || matchId <= 0) {
         throw new Error('Invalid match ID format. Please provide a valid positive number.');
       }
@@ -316,22 +285,15 @@ export function useMatches(): UseMatchesReturn {
         }
       });
 
-      if (response.status === 401) {
-        throw new Error('Please log in to view this profile');
-      }
-
-      if (response.status === 404) {
-        throw new Error('User not found');
-      }
-
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to fetch profile details" }));
-        throw new Error(errorData.message);
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch match profile');
       }
 
-      return await response.json();
+      const data = await response.json();
+      return data;
     } catch (error) {
-      console.error('Profile fetching error:', error);
+      console.error('Error fetching match:', error);
       throw error;
     }
   };
@@ -342,24 +304,24 @@ export function useMatches(): UseMatchesReturn {
         method: 'POST',
         credentials: 'include',
         headers: {
-          'Accept': 'application/json',
-          'Content-Type': 'application/json'
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${getAuthToken()}`
         }
       });
 
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ message: "Failed to create match" }));
-        throw new Error(errorData.message);
+      if (response.status === 401) {
+        throw new Error('Please log in to initiate a match');
       }
 
-      const newMatch = await response.json();
-      
-      // Invalidate queries to refetch updated data
-      await queryClient.invalidateQueries({ queryKey: ["matches", parseInt(targetId)] });
-      
-      return newMatch;
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to initiate match');
+      }
+
+      const match = await response.json();
+      return match;
     } catch (error) {
-      console.error('Match creation error:', error);
+      console.error('Match initiation error:', error);
       throw error;
     }
   };
@@ -430,7 +392,7 @@ export function useMatches(): UseMatchesReturn {
   return {
     matches,
     requests,
-    isLoading: isLoading || isLoadingRequests,
+    isLoading: isLoadingMatches || isLoadingRequests,
     isResponding,
     connect,
     getMessages,
