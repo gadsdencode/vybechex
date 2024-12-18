@@ -1,7 +1,13 @@
 import OpenAI from "openai";
+import Anthropic from '@anthropic-ai/sdk';
 import { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 const OPENAI_API_ENDPOINT = "https://api.openai.com/v1/chat/completions";
+
+// the newest Anthropic model is "claude-3-5-sonnet-20241022" which was released October 22, 2024
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 const openaiClient = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
@@ -119,6 +125,91 @@ export async function generateConversationSuggestions(
       "What do you like to do for fun?",
       "Have you traveled anywhere interesting lately?",
     ];
+  }
+}
+
+export async function generateMatchExplanation(
+  userPersonality: Record<string, number>,
+  matchPersonality: Record<string, number>,
+  scoreBreakdown: {
+    overall: number;
+    components: {
+      personality: number;
+      interests: number;
+      communication: number;
+      social: number;
+      activity: number;
+    };
+    details: {
+      personalityBreakdown: Record<string, number>;
+    };
+  }
+): Promise<string> {
+  try {
+    // Try using Anthropic first if API key is available
+    if (process.env.ANTHROPIC_API_KEY) {
+      const response = await anthropic.messages.create({
+        model: "claude-3-5-sonnet-20241022",
+        max_tokens: 1024,
+        messages: [{
+          role: "user",
+          content: `Given these two users' personality traits and compatibility scores, generate a personalized, friendly explanation of why they might be good matches for friendship. Make it conversational and highlight specific complementary traits.
+
+User's traits:
+${Object.entries(userPersonality)
+  .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+  .join('\n')}
+
+Match's traits:
+${Object.entries(matchPersonality)
+  .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+  .join('\n')}
+
+Compatibility Scores:
+Overall: ${scoreBreakdown.overall}%
+Personality: ${scoreBreakdown.components.personality}%
+Communication: ${scoreBreakdown.components.communication}%
+Social: ${scoreBreakdown.components.social}%
+Activity: ${scoreBreakdown.components.activity}%
+
+Focus on the strongest compatibility points and potential complementary traits. Keep the tone warm and encouraging.`
+        }]
+      });
+
+      return response.content[0].text;
+    }
+
+    // Fallback to OpenAI if Anthropic is not available
+    const messages = [{
+      role: "system" as const,
+      content: "You are a friendly matching assistant that explains compatibility between potential friends in a warm, encouraging way."
+    }, {
+      role: "user" as const,
+      content: `Given these two users' personality traits and compatibility scores, explain why they might be good matches for friendship. Be specific about complementary traits.
+
+User's traits:
+${Object.entries(userPersonality)
+  .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+  .join('\n')}
+
+Match's traits:
+${Object.entries(matchPersonality)
+  .map(([trait, score]) => `${trait}: ${Math.round(score * 100)}%`)
+  .join('\n')}
+
+Compatibility Scores:
+Overall: ${scoreBreakdown.overall}%
+Personality: ${scoreBreakdown.components.personality}%
+Communication: ${scoreBreakdown.components.communication}%
+Social: ${scoreBreakdown.components.social}%
+Activity: ${scoreBreakdown.components.activity}%`
+    }];
+
+    const response = await getChatCompletion(messages);
+    return response || "Unable to generate match explanation.";
+  } catch (error) {
+    console.error("Error generating match explanation:", error);
+    return "Unable to generate match explanation at this time.";
   }
 }
 

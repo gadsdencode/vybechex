@@ -165,9 +165,14 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
       </CardHeader>
       <CardContent className="p-4 pt-0">
         {isExpanded && (
-            <div className="space-y-2 mt-4 p-4 bg-muted/50 rounded-lg">
-              <h4 className="font-medium text-sm">Compatibility Breakdown</h4>
-              <div className="space-y-1.5">
+            <div className="space-y-4 mt-4 p-4 bg-muted/50 rounded-lg">
+              <div className="space-y-2">
+                <h4 className="font-medium">Why You Match</h4>
+                <p className="text-sm text-muted-foreground">{match.matchExplanation}</p>
+              </div>
+              <div className="space-y-2">
+                <h4 className="font-medium">Compatibility Breakdown</h4>
+                <div className="space-y-1.5">
                 <div className="flex justify-between text-sm">
                   <span className="text-muted-foreground">Personality</span>
                   <span>{match.scoreBreakdown?.components.personality || 0}%</span>
@@ -184,6 +189,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
                   <span className="text-muted-foreground">Activity</span>
                   <span>{match.scoreBreakdown?.components.activity || 0}%</span>
                 </div>
+              </div>
               </div>
             </div>
           )}

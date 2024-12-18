@@ -42,6 +42,19 @@ export interface Match {
   status: 'requested' | 'accepted' | 'rejected';
   score?: number;
   compatibilityScore?: number;
+  matchExplanation?: string;
+  scoreBreakdown?: {
+    overall: number;
+    components: {
+      personality: number;
+      communication: number;
+      social: number;
+      activity: number;
+    };
+    details: {
+      personalityBreakdown: Record<string, number>;
+    };
+  };
   requester?: {
     id: number;
     username: string;

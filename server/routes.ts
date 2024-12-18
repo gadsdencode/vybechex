@@ -9,7 +9,7 @@ import type { InsertUser } from "@db/schema";
 import { db } from "@db";
 import { and, eq, ne, desc, or, sql } from "drizzle-orm";
 import { crypto } from "./auth.js";
-import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions } from "./utils/openai";
+import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions, generateMatchExplanation } from "./utils/openai";
 import OpenAI from "openai";
 
 const openaiClient = new OpenAI({
@@ -166,40 +166,89 @@ export function registerRoutes(app: Express): Server {
         ));
 
       // Transform the data to match the client's expected format
-      const matchesWithScores = potentialMatches.map((result) => {
-        // Get detailed score breakdown
-        const scoreDetails = getScoreBreakdown(
-          { personalityTraits: user.personalityTraits || {} },
-          { personalityTraits: result.personalityTraits || {} }
-        );
+      const matchesWithScores = await Promise.all(potentialMatches.map(async (result) => {
+        try {
+          // Convert personality traits to expected format
+          const userTraits = {
+            extraversion: user.personalityTraits?.extraversion || 0,
+            communication: user.personalityTraits?.communication || 0,
+            openness: user.personalityTraits?.openness || 0,
+            values: user.personalityTraits?.values || 0,
+            planning: user.personalityTraits?.planning || 0,
+            sociability: user.personalityTraits?.sociability || 0
+          };
 
-        return {
-          id: result.id,
-          username: result.username,
-          name: result.name || result.username,
-          personalityTraits: result.personalityTraits || {},
-          avatar: result.avatar || "/default-avatar.png",
-          createdAt: result.createdAt?.toISOString() || new Date().toISOString(),
-          status: result.matchStatus || 'none',
-          compatibilityScore: scoreDetails.overall,
-          scoreBreakdown: {
-            components: scoreDetails.components,
-            details: scoreDetails.details
-          },
-          // Add empty interests array as it's computed on the client side
-          interests: []
-        };
+          const matchTraits = {
+            extraversion: result.personalityTraits?.extraversion || 0,
+            communication: result.personalityTraits?.communication || 0,
+            openness: result.personalityTraits?.openness || 0,
+            values: result.personalityTraits?.values || 0,
+            planning: result.personalityTraits?.planning || 0,
+            sociability: result.personalityTraits?.sociability || 0
+          };
+
+          // Get detailed score breakdown
+          const scoreDetails = getScoreBreakdown(
+            { personalityTraits: userTraits },
+            { personalityTraits: matchTraits }
+          );
+
+          // Generate personalized explanation for the match
+          const matchExplanation = await generateMatchExplanation(
+            userTraits,
+            matchTraits,
+            scoreDetails
+          );
+
+          return {
+            id: result.id,
+            username: result.username,
+            name: result.name || result.username,
+            personalityTraits: matchTraits,
+            avatar: result.avatar || "/default-avatar.png",
+            createdAt: result.createdAt?.toISOString() || new Date().toISOString(),
+            status: result.matchStatus || 'none',
+            compatibilityScore: scoreDetails.overall,
+            scoreBreakdown: {
+              components: scoreDetails.components,
+              details: scoreDetails.details
+            },
+            matchExplanation,
+            interests: []
+          };
+        } catch (error) {
+          console.error('Error processing match:', error);
+          // Return a basic version without the explanation if there's an error
+          return {
+            id: result.id,
+            username: result.username,
+            name: result.name || result.username,
+            personalityTraits: result.personalityTraits || {},
+            avatar: result.avatar || "/default-avatar.png",
+            createdAt: result.createdAt?.toISOString() || new Date().toISOString(),
+            status: result.matchStatus || 'none',
+            compatibilityScore: 0,
+            interests: []
+          };
+        }
+      }));
+
+      // Sort by compatibility score and handle undefined scores
+      const sortedMatches = matchesWithScores.sort((a, b) => {
+        const scoreA = typeof a.compatibilityScore === 'number' ? a.compatibilityScore : 0;
+        const scoreB = typeof b.compatibilityScore === 'number' ? b.compatibilityScore : 0;
+        return scoreB - scoreA;
       });
 
-      // Sort by compatibility score and send the array directly
-      const sortedMatches = matchesWithScores
-        .sort((a, b) => b.compatibilityScore - a.compatibilityScore);
-
-      // Debug log
+      // Debug log with more detailed information
       console.log('Sending matches response:', {
         isArray: Array.isArray(sortedMatches),
         length: sortedMatches.length,
-        sample: sortedMatches[0]
+        sample: sortedMatches[0] ? {
+          id: sortedMatches[0].id,
+          score: sortedMatches[0].compatibilityScore,
+          hasExplanation: !!sortedMatches[0].matchExplanation
+        } : null
       });
 
       // Send the raw array as the response
