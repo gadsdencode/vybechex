@@ -1,41 +1,35 @@
-import { drizzle } from "drizzle-orm/postgres-js";
-import postgres from "postgres";
+import { drizzle } from "drizzle-orm/neon-http";
+import { neon, neonConfig } from '@neondatabase/serverless';
+import ws from 'ws';
 import * as schema from "@db/schema";
 
+// Verify required environment variables
 if (!process.env.DATABASE_URL) {
-  throw new Error(
-    "DATABASE_URL must be set. Did you forget to provision a database?",
-  );
+  throw new Error("DATABASE_URL must be set. Database connection requires proper configuration.");
 }
 
-console.log('Initializing database connection...');
+// Configure neon for WebSocket support
+neonConfig.webSocketConstructor = ws;
 
-// Create postgres connection with explicit configuration
-const queryClient = postgres(process.env.DATABASE_URL, {
-  max: 1,
-  idle_timeout: 20,
-  connect_timeout: 10,
-  ssl: process.env.NODE_ENV === 'production',
-  prepare: false,
-  types: {
-    bigint: postgres.BigInt,
-  },
-  debug: process.env.NODE_ENV === 'development',
-});
+// Create the SQL connection
+const sql = neon(process.env.DATABASE_URL);
 
-// Create Drizzle ORM instance with schema
-export const db = drizzle(queryClient, { schema });
+// Create the database instance with HTTP handler
+export const db = drizzle(sql, { schema });
 
-// Export raw client for direct queries if needed
-export const sql = queryClient;
-
-// Utility function to test connection
+// Simple connection test function with proper error handling
 export async function testConnection() {
   try {
-    const result = await queryClient`SELECT NOW() as now`;
+    const result = await sql`SELECT NOW()`;
+    if (!result?.[0]) {
+      throw new Error('Invalid response from database');
+    }
     return { ok: true, timestamp: result[0].now };
   } catch (error) {
     console.error('Database connection test failed:', error);
-    return { ok: false, error };
+    return { 
+      ok: false, 
+      error: error instanceof Error ? error : new Error('Unknown database error') 
+    };
   }
 }

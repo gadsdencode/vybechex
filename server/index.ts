@@ -64,35 +64,55 @@ async function startServer() {
     }, 5000);
 
     try {
-      // Test database connection using our utility function
-      const { ok, timestamp, error } = await db.testConnection();
-      clearTimeout(dbConnectionTimeout);
-      
-      if (!ok) {
-        throw error || new Error('Database connection failed');
+      // Test database connection
+      const connTest = await testConnection();
+      if (!connTest.ok) {
+        throw connTest.error || new Error('Database connection test failed');
       }
       
-      log('Database connection successful:', timestamp);
+      clearTimeout(dbConnectionTimeout);
+      log('Database connection successful');
 
-      // Push schema changes to database
-      await sql`CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        name TEXT DEFAULT '' NOT NULL,
-        bio TEXT DEFAULT '' NOT NULL,
-        quiz_completed BOOLEAN DEFAULT false NOT NULL,
-        personality_traits JSONB DEFAULT '{}' NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        is_group_creator BOOLEAN DEFAULT false NOT NULL,
-        avatar TEXT DEFAULT '/default-avatar.png' NOT NULL
-      )`;
+      // Create tables in correct order (respecting foreign keys)
+      await sql`
+        CREATE TABLE IF NOT EXISTS users (
+          id SERIAL PRIMARY KEY,
+          username TEXT UNIQUE NOT NULL,
+          password TEXT NOT NULL,
+          name TEXT DEFAULT '' NOT NULL,
+          bio TEXT DEFAULT '' NOT NULL,
+          quiz_completed BOOLEAN DEFAULT false NOT NULL,
+          personality_traits JSONB DEFAULT '{}' NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+          is_group_creator BOOLEAN DEFAULT false NOT NULL,
+          avatar TEXT DEFAULT '/default-avatar.png' NOT NULL
+        );
 
-      log('Database schema updated successfully');
+        CREATE TABLE IF NOT EXISTS matches (
+          id SERIAL PRIMARY KEY,
+          user_id_1 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          user_id_2 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          score INTEGER,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('requested', 'pending', 'accepted', 'rejected')),
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE TABLE IF NOT EXISTS messages (
+          id SERIAL PRIMARY KEY,
+          match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+          sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          content TEXT NOT NULL,
+          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+          analyzed BOOLEAN DEFAULT false,
+          sentiment JSONB
+        );
+      `;
+
+      log('Database schema initialized successfully');
     } catch (dbError) {
       clearTimeout(dbConnectionTimeout);
       console.error('Database connection failed:', dbError);
-      throw new Error(`Failed to connect to database: ${dbError?.message || 'Unknown error'}`);
+      throw new Error(`Database initialization failed: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`);
     }
 
     // Setup auth after database connection is verified
