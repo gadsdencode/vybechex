@@ -26,26 +26,7 @@ declare global {
   }
 }
 
-// Utility function to calculate compatibility score between two users
-function calculateCompatibilityScore(
-  traits1: Record<string, number> | null | undefined,
-  traits2: Record<string, number> | null | undefined
-): number {
-  if (!traits1 || !traits2) return 0;
-
-  const commonTraits = Object.keys(traits1).filter(trait => trait in traits2);
-  if (commonTraits.length === 0) return 0;
-
-  const totalDifference = commonTraits.reduce((sum, trait) => {
-    const value1 = traits1[trait] || 0;
-    const value2 = traits2[trait] || 0;
-    // Calculate similarity (1 - difference)
-    return sum + (1 - Math.abs(value1 - value2));
-  }, 0);
-
-  // Return percentage (0-100)
-  return Math.round((totalDifference / commonTraits.length) * 100);
-}
+import { calculateComplexityScore, getScoreBreakdown } from "./utils/matching";
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
@@ -186,9 +167,9 @@ export function registerRoutes(app: Express): Server {
 
       // Transform the data to match the client's expected format
       const matchesWithScores = potentialMatches.map((result) => {
-        const score = calculateCompatibilityScore(
-          user.personalityTraits || {},
-          result.personalityTraits || {}
+        const score = calculateComplexityScore(
+          { personalityTraits: user.personalityTraits || {} },
+          { personalityTraits: result.personalityTraits || {} }
         );
 
         return {
@@ -273,17 +254,21 @@ export function registerRoutes(app: Express): Server {
         )
         .limit(1);
 
-      // Calculate basic compatibility score
-      const compatibilityScore = calculateCompatibilityScore(
-        currentUser.personalityTraits,
-        targetUser[0].personalityTraits
+      // Calculate detailed compatibility score
+      const scoreDetails = getScoreBreakdown(
+        { personalityTraits: currentUser.personalityTraits || {} },
+        { personalityTraits: targetUser[0].personalityTraits || {} }
       );
 
-      // Return user profile with match status
+      // Return user profile with match status and detailed scoring
       return sendSuccess(res, {
         ...targetUser[0],
         matchStatus: matchRecord?.[0]?.status || 'none',
-        compatibilityScore,
+        compatibilityScore: scoreDetails.overall,
+        scoreBreakdown: {
+          components: scoreDetails.components,
+          details: scoreDetails.details
+        },
         canInitiateMatch: !matchRecord || matchRecord.length === 0,
         matchId: matchRecord?.[0]?.id
       });
