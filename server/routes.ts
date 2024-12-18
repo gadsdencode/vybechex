@@ -678,11 +678,6 @@ export function registerRoutes(app: Express): Server {
         return sendError(res, 401, "User not authenticated");
       }
       
-      const userId = Number(user.id);
-      if (isNaN(userId) || userId <= 0) {
-        return sendError(res, 400, "Invalid user ID format");
-      }
-      
       // Get all matches where the current user is the recipient (userId2) and status is 'requested'
       const matchRequests = await db
         .select({
