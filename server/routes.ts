@@ -167,7 +167,8 @@ export function registerRoutes(app: Express): Server {
 
       // Transform the data to match the client's expected format
       const matchesWithScores = potentialMatches.map((result) => {
-        const score = calculateComplexityScore(
+        // Get detailed score breakdown
+        const scoreDetails = getScoreBreakdown(
           { personalityTraits: user.personalityTraits || {} },
           { personalityTraits: result.personalityTraits || {} }
         );
@@ -180,7 +181,11 @@ export function registerRoutes(app: Express): Server {
           avatar: result.avatar || "/default-avatar.png",
           createdAt: result.createdAt?.toISOString() || new Date().toISOString(),
           status: result.matchStatus || 'none',
-          compatibilityScore: score,
+          compatibilityScore: scoreDetails.overall,
+          scoreBreakdown: {
+            components: scoreDetails.components,
+            details: scoreDetails.details
+          },
           // Add empty interests array as it's computed on the client side
           interests: []
         };
