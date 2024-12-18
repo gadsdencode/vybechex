@@ -677,11 +677,25 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/matches/requests", requireAuth, async (req, res) => {
     try {
       const user = req.user as SelectUser;
-      if (!user || typeof user.id !== 'number') {
-        console.error("Invalid user session or ID format", user);
+      if (!user) {
+        console.error("No user found in session");
+        return sendError(res, 401, "User not found in session");
+      }
+
+      // Ensure user.id exists and is a valid number
+      if (!user.id || typeof user.id === 'undefined') {
+        console.error("User ID missing from session:", user);
+        return sendError(res, 400, "User ID missing from session");
+      }
+
+      // Convert to number if string and validate
+      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
+      if (isNaN(userId) || userId <= 0) {
+        console.error("Invalid user ID format:", user.id);
         return sendError(res, 400, "Invalid user ID format");
       }
-      console.log("Fetching match requests for user:", user.id);
+
+      console.log("Fetching match requests for user:", userId);
       
       // Get pending requests received by the user
       const requests = await db
@@ -701,11 +715,13 @@ export function registerRoutes(app: Express): Server {
         .leftJoin(users, eq(matches.userId1, users.id))
         .where(
           and(
-            eq(matches.userId2, user.id),
+            eq(matches.userId2, userId),
             eq(matches.status, 'requested')
           )
         )
         .orderBy(desc(matches.createdAt));
+
+      console.log("Raw match requests:", requests);
 
       console.log("Raw match requests:", requests);
 

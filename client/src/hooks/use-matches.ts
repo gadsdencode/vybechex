@@ -31,17 +31,9 @@ export interface ExtendedUser {
   createdAt: string;
 }
 
-export interface Match {
-  id: number;
-  username: string;
-  name: string;
+export interface Match extends Omit<ExtendedUser, 'personalityTraits'> {
   personalityTraits: Record<string, number>;
-  compatibilityScore: number;
-  interests: Interest[];
-  status: MatchStatus;
-  avatar: string;
-  createdAt: string;
-  score: number;
+  score?: number;
   requester?: {
     id: number;
     username: string;

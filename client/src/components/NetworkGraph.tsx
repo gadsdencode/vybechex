@@ -109,7 +109,7 @@ export function NetworkGraph() {
         nodeColor={(node: CustomNodeObject) => {
           return getComputedColor(
             '--primary',
-            node.id === user.id.toString() ? 1 : 0.7
+            node.id === (user?.id?.toString() ?? '') ? 1 : 0.7
           );
         }}
         linkColor={(link: CustomLinkObject) => {

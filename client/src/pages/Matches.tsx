@@ -1,17 +1,18 @@
 'use client'
 
 import { useEffect, useRef, useState } from "react";
-import { useMatches } from "../hooks/use-matches";
-import { useUser } from "../hooks/use-user";
+import { useMatches } from "@/hooks/use-matches";
+import { useUser } from "@/hooks/use-user";
 import { Loader2, Users } from 'lucide-react';
 import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
-import { MatchCard } from "../components/MatchCard";
-import { NetworkGraph } from "../components/NetworkGraph";
+import { MatchCard } from "@/components/MatchCard";
+import { NetworkGraph } from "@/components/NetworkGraph";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { MatchRequests } from "../components/match-requests";
+import { MatchRequests } from "@/components/match-requests";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import type { Match } from "@/hooks/use-matches";
 
 gsap.registerPlugin(ScrollTrigger);
 
@@ -53,13 +54,15 @@ export default function Matches() {
         });
 
         // Animate cards
-        gsap.from(cardsRef.current.children, {
-          autoAlpha: 0,
-          y: 20,
-          duration: 0.5,
-          stagger: 0.1,
-          clearProps: "all"
-        });
+        if (cardsRef.current?.children) {
+          gsap.from(cardsRef.current.children, {
+            autoAlpha: 0,
+            y: 20,
+            duration: 0.5,
+            stagger: 0.1,
+            clearProps: "all"
+          });
+        }
       });
 
       // Cleanup function

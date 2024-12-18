@@ -15,10 +15,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 
-import type { ExtendedUser, Interest } from '@/hooks/use-matches';
+import type { ExtendedUser, Interest, Match } from '@/hooks/use-matches';
 
 interface MatchCardProps {
-  match: ExtendedUser;
+  match: Match;
 }
 
 export const MatchCard: FC<MatchCardProps> = ({ match }) => {
@@ -28,9 +28,9 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
 
   // Get the top interests by category
   const interests = match.interests || [];
-  const topPersonalityTrait = interests.find(i => i.category === 'personality');
-  const topHobby = interests.find(i => i.category === 'hobby');
-  const topValue = interests.find(i => i.category === 'value');
+  const topPersonalityTrait = interests.find((i: Interest) => i.category === 'personality');
+  const topHobby = interests.find((i: Interest) => i.category === 'hobby');
+  const topValue = interests.find((i: Interest) => i.category === 'value');
 
   const handleConnect = async () => {
     try {
@@ -128,7 +128,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
               {getStatusBadge()}
               <Badge variant="secondary" className="flex items-center gap-1">
                 <Zap className="h-3 w-3" />
-                {Math.round(match.compatibilityScore)}% Match
+                {Math.round(match.compatibilityScore || match.score || 0)}% Match
               </Badge>
             </div>
           </div>
