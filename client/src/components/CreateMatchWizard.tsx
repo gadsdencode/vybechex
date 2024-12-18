@@ -155,17 +155,23 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
         throw new Error("You must be logged in to create a match");
       }
 
-      if (!initialMatchId) {
-        throw new Error("No match ID provided");
+   
+      if (!initialMatchId || isNaN(Number(initialMatchId)) || Number(initialMatchId) <= 0) {
+        throw new Error("Invalid match ID. Please provide a valid positive number.");
       }
 
-      const userTraits = data.interests;
-      const compatibilityScore = Object.values(userTraits).reduce((sum, val) => sum + val, 0) / Object.keys(userTraits).length;
-
       const response = await connect({
-        id: initialMatchId,
-        score: Math.round(compatibilityScore * 100)
+        id: initialMatchId
       });
+
+      if (response.status === 'requested') {
+        toast({
+          title: "Request Sent",
+          description: "Your connection request has been sent. We'll notify you as soon as they respond!",
+          variant: "default",
+          duration: 2500
+        });
+      }
 
       if (response.status === 'accepted') {
         setLocation(`/chat/${initialMatchId}`);

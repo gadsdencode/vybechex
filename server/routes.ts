@@ -354,13 +354,30 @@ export function registerRoutes(app: Express): Server {
   app.post("/api/matches/:id/connect", requireAuth, async (req, res) => {
     try {
       const user = req.user as SelectUser;
-      const matchId = parseInt(req.params.id);
+      const targetId = parseInt(req.params.id);
       
-      if (isNaN(matchId) || matchId <= 0) {
-        return sendError(res, 400, "Invalid match ID. Please provide a valid positive number.");
+      // Enhanced input validation
+      if (isNaN(targetId) || targetId <= 0) {
+        return sendError(res, 400, "Invalid user ID format. Please provide a valid positive number.");
       }
 
-      // Check if match already exists
+      if (targetId === user.id) {
+        return sendError(res, 400, "Cannot create a match with yourself.");
+      }
+
+      // Verify target user exists
+      const [targetUser] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, targetId))
+        .limit(1);
+
+      if (!targetUser) {
+        return sendError(res, 404, "User not found", 
+          `No user exists with ID ${targetId}`);
+      }
+
+      // Check if match already exists with detailed status handling
       const [existingMatch] = await db
         .select()
         .from(matches)
@@ -368,10 +385,10 @@ export function registerRoutes(app: Express): Server {
           or(
             and(
               eq(matches.userId1, user.id),
-              eq(matches.userId2, matchId)
+              eq(matches.userId2, targetId)
             ),
             and(
-              eq(matches.userId1, matchId),
+              eq(matches.userId1, targetId),
               eq(matches.userId2, user.id)
             )
           )
@@ -379,35 +396,74 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (existingMatch) {
-        if (existingMatch.status === 'requested') {
-          // Update to accepted if current user received the request
-          if (existingMatch.userId2 === user.id) {
-            const [updatedMatch] = await db
-              .update(matches)
-              .set({ status: 'accepted' })
-              .where(eq(matches.id, existingMatch.id))
-              .returning();
-            return sendSuccess(res, updatedMatch);
-          }
+        // Enhanced status handling with appropriate responses
+        switch (existingMatch.status) {
+          case 'requested':
+            // Auto-accept if current user is the request recipient
+            if (existingMatch.userId2 === user.id) {
+              const [updatedMatch] = await db
+                .update(matches)
+                .set({ 
+                  status: 'accepted',
+                  score: calculateCompatibilityScore(
+                    user.personalityTraits,
+                    targetUser.personalityTraits
+                  )
+                })
+                .where(eq(matches.id, existingMatch.id))
+                .returning();
+              
+              return sendSuccess(res, updatedMatch, 
+                "Match request accepted! You can now start chatting.");
+            }
+            return sendSuccess(res, existingMatch,
+              "Your match request is still pending.");
+            
+          case 'accepted':
+            return sendSuccess(res, existingMatch,
+              "You're already matched with this user!");
+            
+          case 'rejected':
+            return sendError(res, 409, 
+              "Cannot create match",
+              "This user has previously declined your match request.");
+            
+          default:
+            return sendSuccess(res, existingMatch);
         }
-        return sendSuccess(res, existingMatch);
       }
 
-      // Create new match request
+      // Calculate initial compatibility score
+      const compatibilityScore = calculateCompatibilityScore(
+        user.personalityTraits,
+        targetUser.personalityTraits
+      );
+
+      // Create new match request with compatibility score
       const [newMatch] = await db
         .insert(matches)
         .values({
           userId1: user.id,
-          userId2: matchId,
+          userId2: targetId,
           status: 'requested',
+          score: compatibilityScore,
           createdAt: new Date()
         })
         .returning();
 
-      return sendSuccess(res, newMatch);
+      return sendSuccess(res, newMatch,
+        "Match request sent successfully! We'll notify you when they respond.");
+
     } catch (error) {
-      console.error("Error connecting match:", error);
-      return sendError(res, 500, "Failed to connect match", error);
+      console.error("Error in match connection:", error);
+      const isDbError = error instanceof Error && 
+        error.message.includes('violates foreign key constraint');
+      
+      return sendError(res, 500,
+        isDbError ? "Database constraint violation" : "Failed to process match request",
+        error instanceof Error ? error.message : "Unknown error occurred",
+        user?.id
+      );
     }
   });
 

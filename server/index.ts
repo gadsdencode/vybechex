@@ -1,14 +1,14 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { db, sql, testConnection } from "@db";
+import { db, checkDatabaseHealth, closeDatabaseConnection } from "@db";
 import { setupAuth } from "./auth";
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Request logging middleware
+// Request logging middleware with enhanced error context
 app.use((req, res, next) => {
   const start = Date.now();
   const path = req.path;
@@ -39,101 +39,121 @@ app.use((req, res, next) => {
   next();
 });
 
-// Global error handler
+// Enhanced global error handler with detailed logging
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  console.error('Error:', err);
+  const timestamp = new Date().toISOString();
   const status = err.status || err.statusCode || 500;
   const message = err.message || "Internal Server Error";
+  
+  // Log error with context
+  console.error('Error:', {
+    timestamp,
+    status,
+    message,
+    stack: err.stack,
+    code: err.code,
+    name: err.name
+  });
   
   // Don't expose stack traces in production
   const error = app.get('env') === 'development' ? { 
     message,
-    stack: err.stack 
+    stack: err.stack,
+    timestamp
   } : { message };
   
   res.status(status).json(error);
 });
 
+let server: ReturnType<typeof registerRoutes>;
+
+// Graceful shutdown handler
+async function shutdown(signal: string) {
+  console.log(`\n${signal} received. Starting graceful shutdown...`);
+  
+  // Close server first to stop accepting new connections
+  if (server) {
+    await new Promise<void>((resolve) => {
+      server.close(() => {
+        console.log('HTTP server closed');
+        resolve();
+      });
+    });
+  }
+
+  try {
+    // Close database connections
+    await closeDatabaseConnection();
+    console.log('Database connections closed');
+  } catch (error) {
+    console.error('Error closing database connections:', error);
+  }
+
+  // Exit process
+  process.exit(0);
+}
+
 async function startServer() {
   try {
-    // Test database connection with timeout
-    const dbConnectionTimeout = setTimeout(() => {
-      console.error('Database connection timeout');
+    // Check database health with timeout
+    const dbCheckTimeout = setTimeout(() => {
+      console.error('Database health check timeout');
       process.exit(1);
-    }, 5000);
+    }, 10000);
 
     try {
-      // Test database connection
-      const connTest = await testConnection();
-      if (!connTest.ok) {
-        throw connTest.error || new Error('Database connection test failed');
+      // Verify database connection and health
+      const healthCheck = await checkDatabaseHealth();
+      clearTimeout(dbCheckTimeout);
+
+      if (!healthCheck.ok) {
+        throw new Error(`Database health check failed: ${healthCheck.error}`);
       }
+
+      log('Database connection verified');
       
-      clearTimeout(dbConnectionTimeout);
-      log('Database connection successful');
+      // Setup auth with verified database connection
+      setupAuth(app);
 
-      // Create tables in correct order (respecting foreign keys)
-      // Create tables in sequence to respect dependencies
-      await sql`CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        username TEXT UNIQUE NOT NULL,
-        password TEXT NOT NULL,
-        name TEXT DEFAULT '' NOT NULL,
-        bio TEXT DEFAULT '' NOT NULL,
-        quiz_completed BOOLEAN DEFAULT false NOT NULL,
-        personality_traits JSONB DEFAULT '{}' NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-        is_group_creator BOOLEAN DEFAULT false NOT NULL,
-        avatar TEXT DEFAULT '/default-avatar.png' NOT NULL
-      )`;
+      // Register routes
+      server = registerRoutes(app);
 
-      await sql`CREATE TABLE IF NOT EXISTS matches (
-        id SERIAL PRIMARY KEY,
-        user_id_1 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        user_id_2 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        score INTEGER,
-        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('requested', 'pending', 'accepted', 'rejected')),
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )`;
+      // Setup Vite or static serving
+      if (app.get("env") === "development") {
+        await setupVite(app, server);
+      } else {
+        serveStatic(app);
+      }
 
-      await sql`CREATE TABLE IF NOT EXISTS messages (
-        id SERIAL PRIMARY KEY,
-        match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-        sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-        content TEXT NOT NULL,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        analyzed BOOLEAN DEFAULT false,
-        sentiment JSONB
-      )`;
+      const PORT = 5000;
+      server.listen(PORT, "0.0.0.0", () => {
+        log(`Server running on port ${PORT}`);
+      });
 
-      log('Database schema initialized successfully');
+      // Register shutdown handlers
+      process.on('SIGTERM', () => shutdown('SIGTERM'));
+      process.on('SIGINT', () => shutdown('SIGINT'));
+
     } catch (dbError) {
-      clearTimeout(dbConnectionTimeout);
-      console.error('Database connection failed:', dbError);
+      clearTimeout(dbCheckTimeout);
+      console.error('Database initialization failed:', dbError);
       throw new Error(`Database initialization failed: ${dbError instanceof Error ? dbError.message : 'Unknown error'}`);
     }
-
-    // Setup auth after database connection is verified
-    setupAuth(app);
-
-    // Register routes after auth is setup
-    const server = registerRoutes(app);
-
-    // Setup Vite or static serving after routes
-    if (app.get("env") === "development") {
-      await setupVite(app, server);
-    } else {
-      serveStatic(app);
-    }
-
-    const PORT = 5000;
-    server.listen(PORT, "0.0.0.0", () => {
-      log(`Server running on port ${PORT}`);
-    });
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
 }
+
+// Handle uncaught errors
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  shutdown('UNCAUGHT_EXCEPTION').catch(console.error);
+});
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  shutdown('UNHANDLED_REJECTION').catch(console.error);
+});
 
 startServer();

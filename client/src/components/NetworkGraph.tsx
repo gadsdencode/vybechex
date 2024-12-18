@@ -64,39 +64,89 @@ export function NetworkGraph() {
         return;
       }
 
-      // Create nodes for the current user and all matches
+      // Validate match data structure
+      const invalidMatches = matches.filter(
+        match => !match.id || (!match.name && !match.username)
+      );
+
+      if (invalidMatches.length > 0) {
+        console.error("Invalid match data:", invalidMatches);
+        setError("Some match data is incomplete");
+        return;
+      }
+
+      // Create nodes for the current user and all matches with validation
       const nodes: CustomNodeObject[] = [
         {
           id: user.id.toString(),
           name: user.name || user.username,
           val: 40, // Make current user node larger
-        },
-        ...matches.map((match: Match) => ({
-          id: match.id.toString(),
-          name: match.name || match.username,
-          val: 30,
-        })),
+        }
       ];
 
-      // Create links between the current user and matches
-      const links: CustomLinkObject[] = matches.map((match: Match) => ({
-        source: nodes.find((node) => node.id === user.id.toString())!,
-        target: nodes.find((node) => node.id === match.id.toString())!,
-        value: match.compatibilityScore / 100, // Normalize to 0-1
-      }));
+      // Safely add match nodes with validation
+      matches.forEach((match: Match) => {
+        if (match.id && (match.name || match.username)) {
+          nodes.push({
+            id: match.id.toString(),
+            name: match.name || match.username,
+            val: 30,
+          });
+        }
+      });
+
+      // Create links between the current user and matches with validation
+      const links: CustomLinkObject[] = [];
+      matches.forEach((match: Match) => {
+        const sourceNode = nodes.find((node) => node.id === user.id.toString());
+        const targetNode = nodes.find((node) => node.id === match.id.toString());
+        
+        if (sourceNode && targetNode) {
+          links.push({
+            source: sourceNode,
+            target: targetNode,
+            value: Math.max(0, Math.min(1, (match.compatibilityScore || 0) / 100)) // Normalize and clamp to 0-1
+          });
+        }
+      });
+
+      if (nodes.length === 1) {
+        setError("No valid matches found to display");
+        return;
+      }
 
       setGraphData({ nodes, links });
+      setError(null); // Clear any previous errors if successful
     } catch (error) {
       console.error("Error building network graph:", error);
-      setError("Failed to build network visualization");
+      setError(error instanceof Error ? error.message : "Failed to build network visualization");
     }
   }, [matches, user]);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-[400px]">
-        <Loader2 className="h-8 w-8 animate-spin text-primary" />
-      </div>
+      <Card className="p-4 h-[400px] w-full bg-card">
+        <div className="flex flex-col items-center justify-center h-full gap-2">
+          <Loader2 className="h-8 w-8 animate-spin text-primary" />
+          <p className="text-sm text-muted-foreground">Loading your network visualization...</p>
+        </div>
+      </Card>
+    );
+  }
+
+  if (error) {
+    return (
+      <Card className="p-4 h-[400px] w-full bg-card">
+        <div className="flex flex-col items-center justify-center h-full gap-4">
+          <div className="flex items-center gap-2 text-destructive">
+            <AlertCircle className="h-6 w-6" />
+            <h3 className="font-semibold">Network Visualization Error</h3>
+          </div>
+          <p className="text-sm text-muted-foreground text-center max-w-md">
+            {error}
+          </p>
+        </div>
+      </Card>
     );
   }
 

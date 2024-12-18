@@ -1,3 +1,4 @@
+import { setUserData, setUserId, setAuthToken, clearAuthData } from '@/utils/auth';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SelectUser } from "@db/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -15,7 +16,11 @@ interface AuthResponse {
     name?: string;
     quizCompleted?: boolean;
     isGroupCreator?: boolean;
+    avatar?: string;
   };
+  token?: string;
+  authToken?: string;
+  avatar?: string;
 }
 
 async function handleAuthRequest(
@@ -58,37 +63,69 @@ export function useUser() {
         const response = await fetch("/api/user", {
           credentials: "include",
         });
-
+  
         if (response.status === 401) {
           console.log("User not authenticated");
+          clearAuthData();
           return null;
         }
-
+  
         if (!response.ok) {
           console.error("Failed to fetch user:", response.status, response.statusText);
           const errorText = await response.text();
           throw new Error(`Failed to fetch user: ${errorText}`);
         }
-
+  
         const userData = await response.json();
         console.log("User data fetched:", userData);
+        
+        // Store user data in localStorage
+        if (userData) {
+          setUserId(userData.id);
+          setUserData({
+            id: userData.id,
+            username: userData.username,
+            name: userData.name,
+            avatar: userData.avatar,
+            isGroupCreator: userData.isGroupCreator
+          });
+        }
+        
         return userData;
       } catch (error) {
         console.error("Error in user fetch:", error);
         return null;
       }
     },
-    staleTime: 30000, // Data stays fresh for 30 seconds
-    gcTime: 1000 * 60 * 5, // Cache data for 5 minutes
-    refetchOnWindowFocus: false, // Prevent refetch on window focus
-    retry: false, // Don't retry on failure
+    staleTime: 30000,
+    gcTime: 1000 * 60 * 5,
+    refetchOnWindowFocus: false,
+    retry: false,
   });
 
   const loginMutation = useMutation({
-    mutationFn: (credentials: AuthCredentials) =>
-      handleAuthRequest("/api/login", credentials),
+    mutationFn: async (credentials: AuthCredentials) => {
+      const response = await handleAuthRequest("/api/login", credentials);
+      // Store auth token if it's in the response
+      const token = response.token || response.authToken;
+      if (token) {
+        setAuthToken(token);
+      }
+      return response;
+    },
     onSuccess: (data) => {
       console.log("Login successful:", data);
+      // Store user data in localStorage
+      if (data.user) {
+        setUserId(data.user.id);
+        setUserData({
+          id: data.user.id,
+          username: data.user.username,
+          name: data.user.name || null,
+          avatar: data.user.avatar || "/default-avatar.png",
+          isGroupCreator: data.user.isGroupCreator || false
+        });
+      }
       queryClient.setQueryData(["/api/user"], data.user);
       queryClient.invalidateQueries({ queryKey: ["/api/user"] });
       toast({
@@ -98,6 +135,7 @@ export function useUser() {
     },
     onError: (error: Error) => {
       console.error("Login error:", error);
+      clearAuthData();
       toast({
         title: "Login failed",
         description: error.message,

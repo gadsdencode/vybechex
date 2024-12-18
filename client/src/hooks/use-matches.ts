@@ -169,78 +169,212 @@ export function useMatches(): UseMatchesReturn {
   
   const { mutate: respondToMatch, isPending: isResponding } = useMutation({
     mutationFn: async ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => {
-      try {
-        const response = await fetch(`/api/matches/${matchId}/respond`, {
-          method: 'POST',
-          credentials: 'include',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${getAuthToken()}`
-          },
-          body: JSON.stringify({ status })
-        });
+      // Input validation
+      if (!matchId || isNaN(matchId) || matchId <= 0) {
+        throw new Error('Invalid match ID provided');
+      }
 
-        if (response.status === 401) {
-          throw new Error('Unauthorized access');
+      if (!['accepted', 'rejected'].includes(status)) {
+        throw new Error('Invalid status provided');
+      }
+
+      let retries = 3;
+      let lastError: Error | null = null;
+
+      while (retries > 0) {
+        try {
+          const response = await fetch(`/api/matches/${matchId}/respond`, {
+            method: 'POST',
+            credentials: 'include',
+            headers: {
+              'Content-Type': 'application/json',
+              'Accept': 'application/json',
+              'Authorization': `Bearer ${getAuthToken()}`
+            },
+            body: JSON.stringify({ status })
+          });
+
+          let errorData;
+          try {
+            errorData = await response.json();
+          } catch (parseError) {
+            console.error('Error parsing response:', parseError);
+            throw new Error('Invalid response from server');
+          }
+
+          if (!response.ok) {
+            switch (response.status) {
+              case 401:
+                throw new Error('Please log in to respond to match requests');
+              case 403:
+                throw new Error('You do not have permission to respond to this match request');
+              case 404:
+                throw new Error('Match request not found');
+              case 409:
+                throw new Error('This match request has already been processed');
+              default:
+                throw new Error(errorData.message || 'Failed to respond to match request');
+            }
+          }
+
+          return errorData;
+        } catch (error) {
+          console.error(`Match response error (attempt ${4 - retries}/3):`, error);
+          lastError = error instanceof Error ? error : new Error('Unknown error occurred');
+          
+          // Only retry on network errors or 5xx server errors
+          if (error instanceof Error && error.name === 'TypeError' || 
+              (error as any).status >= 500) {
+            retries--;
+            if (retries > 0) {
+              await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
+              continue;
+            }
+          } else {
+            // Don't retry on client errors
+            throw lastError;
+          }
         }
+      }
 
-        if (!response.ok) {
-          const errorData = await response.json().catch(() => ({}));
-          throw new Error(errorData.message || 'Failed to respond to match request');
+      throw lastError || new Error('Failed to respond to match request after multiple attempts');
+    },
+    onSuccess: (data, variables) => {
+      // Invalidate both match requests and matches queries
+      queryClient.invalidateQueries({ queryKey: ['match-requests'] });
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+
+      // Show appropriate success message based on the response
+      const successMessages = {
+        accepted: {
+          title: "Match Accepted! 🎉",
+          description: "You can now start chatting with your new match!",
+        },
+        rejected: {
+          title: "Request Declined",
+          description: "The match request has been declined.",
         }
+      };
 
-        const data = await response.json();
-        return data;
-      } catch (error) {
-        console.error('Match response error:', error);
-        throw error;
+      const message = successMessages[variables.status];
+      toast({
+        title: message.title,
+        description: message.description,
+        variant: "default",
+        duration: 5000
+      });
+
+      // Update local cache optimistically
+      queryClient.setQueryData(['match-requests'], (oldData: any) => {
+        if (!oldData) return oldData;
+        return oldData.filter((request: any) => request.id !== variables.matchId);
+      });
+    },
+    onError: (error, variables, context) => {
+      console.error('Match response error:', {
+        error,
+        matchId: variables.matchId,
+        status: variables.status
+      });
+
+      // Show detailed error message
+      toast({
+        title: "Unable to Process Match Request",
+        description: error instanceof Error 
+          ? error.message 
+          : "There was a problem processing your response. Please try again.",
+        variant: "destructive",
+        duration: 7000
+      });
+
+      // Revert optimistic update if needed
+      if (context) {
+        queryClient.setQueryData(['match-requests'], context);
       }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['match-requests'] });
-      toast({
-        title: "Success",
-        description: "Match request response sent successfully",
-        variant: "default"
-      });
+    // Add retry configuration
+    retry: (failureCount, error) => {
+      // Only retry on network errors or 5xx server errors
+      if (error instanceof Error && error.name === 'TypeError' || 
+          (error as any).status >= 500) {
+        return failureCount < 3;
+      }
+      return false;
     },
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to respond to match request",
-        variant: "destructive"
-      });
-    }
+    retryDelay: (attemptIndex) => Math.min(1000 * (attemptIndex + 1), 3000),
   });
 
   const connect = async ({ id }: { id: string }): Promise<Match> => {
     try {
+      // Input validation
+      if (!id || isNaN(parseInt(id))) {
+        throw new Error('Invalid user ID provided');
+      }
+
+      // Enhanced request with better error context
       const response = await fetch(`/api/matches/${id}/connect`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         credentials: 'include'
       });
 
-      if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to connect');
+      let data;
+      try {
+        data = await response.json();
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        throw new Error('Invalid response from server');
       }
 
-      const match = await response.json();
+      if (!response.ok) {
+        const errorMessage = data?.message || 'Failed to connect';
+        const errorCode = response.status;
+        
+        // Handle specific error cases
+        switch (errorCode) {
+          case 400:
+            throw new Error(`Invalid request: ${errorMessage}`);
+          case 401:
+            throw new Error('Please log in to connect with other users');
+          case 403:
+            throw new Error('You do not have permission to perform this action');
+          case 404:
+            throw new Error('User not found');
+          case 409:
+            throw new Error('A match request already exists with this user');
+          default:
+            throw new Error(`Connection failed: ${errorMessage}`);
+        }
+      }
+
+      // Success handling
+      const match = data;
       queryClient.invalidateQueries({ queryKey: ['matches'] });
 
+      // Enhanced status messages with more context
       const toastMessages = {
         accepted: {
-          title: "Match Accepted! ",
+          title: "Match Accepted! 🎉",
           description: "Great news! You're now connected. Click 'Start Chat' to begin your conversation.",
+          variant: "default" as const
         },
         requested: {
-          title: "Request Sent Successfully ",
+          title: "Request Sent Successfully ✨",
           description: "Your connection request has been sent. We'll notify you as soon as they respond!",
+          variant: "default" as const
         },
         pending: {
-          title: "Request Already Sent",
+          title: "Request Already Sent ⏳",
           description: "You've already sent a connection request to this person. Please wait for their response.",
+          variant: "default" as const
+        },
+        rejected: {
+          title: "Request Declined",
+          description: "This user has declined your connection request.",
+          variant: "destructive" as const
         }
       };
 
@@ -248,14 +382,24 @@ export function useMatches(): UseMatchesReturn {
       if (statusMessage) {
         toast({
           ...statusMessage,
-          variant: "default",
           duration: 5000,
         });
       }
 
       return match;
     } catch (error) {
-      return handleApiError(error, "Connection Failed");
+      // Enhanced error handling with better user feedback
+      console.error('Match connection error:', error);
+      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
+      
+      toast({
+        title: "Connection Failed",
+        description: errorMessage,
+        variant: "destructive",
+        duration: 5000
+      });
+
+      throw error;
     }
   };
 

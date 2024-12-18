@@ -1,0 +1,91 @@
+Based on the error message and code provided, the issue appears to be related to an invalid user ID format when handling match requests. Let's analyze and fix this:
+
+## The Issue
+The error `Invalid user ID format` occurs when the API endpoint receives an incorrectly formatted user ID[1]. This typically happens when:
+- The ID is not in the expected format (e.g., string instead of number)
+- The ID is missing or undefined
+- The ID contains invalid characters
+
+## Solution
+
+**1. Check ID Type Handling**
+```typescript
+// In your useMatches hook, modify the respondToMatch function:
+const respondToMatch = async ({ matchId, status }: { 
+  matchId: number; 
+  status: 'accepted' | 'rejected' 
+}) => {
+  if (!matchId || typeof matchId !== 'number') {
+    throw new Error('Invalid match ID format');
+  }
+
+  try {
+    const response = await fetch(`/api/matches/${matchId}/respond`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${getAuthToken()}`
+      },
+      body: JSON.stringify({ status })
+    });
+    
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || 'Failed to respond to match request');
+    }
+    
+    return response.json();
+  } catch (error) {
+    console.error('Match response error:', error);
+    throw error;
+  }
+}
+```
+
+**2. Update MatchRequests Component**
+```typescript
+// In your MatchRequests component, ensure proper type conversion:
+<Button
+  variant="default"
+  disabled={isResponding}
+  onClick={() => onRespond(Number(request.id), 'accepted')}
+>
+  Accept
+</Button>
+```
+
+**3. Type Validation**
+Add proper type validation for the Match interface:
+
+```typescript
+interface Match {
+  id: number;
+  requester?: {
+    id: number;
+    username: string;
+    name: string;
+    avatar: string;
+    personalityTraits: Record<string, number>;
+    createdAt: string;
+  };
+  status: 'requested' | 'accepted' | 'rejected';
+  createdAt: string;
+  score?: number;
+  compatibilityScore?: number;
+}
+```
+
+Make sure that when handling the match request, you're passing the correct ID format as expected by your API. The error suggests that the API is expecting a specific format for the user ID, so ensure that the ID is properly formatted before making the request[6].
+
+Also, verify that your authentication token is valid and properly included in the request headers, as this can sometimes cause similar errors[8].
+
+Citations:
+[1] https://ppl-ai-file-upload.s3.amazonaws.com/web/direct-files/1865482/a4c4574b-8273-4a18-a1ef-c6874a7e45e6/paste.txt
+[2] https://learn.microsoft.com/en-us/microsoft-365/troubleshoot/active-directory/this-doesnt-look-like-valid-user-id-error
+[3] https://www.dropboxforum.com/discussions/101000014/usersget-current-account-invalid-select-user-id-format-error-/627564
+[4] https://ux.stackexchange.com/questions/58302/error-message-for-invalid-username
+[5] https://www.reddit.com/r/GenshinImpactTips/comments/qypllx/invalid_account_format/
+[6] https://apidog.com/blog/invalid-api-response/
+[7] https://success.clarizen.com/hc/en-us/community/posts/115001091748-Invalid-username-when-logging-in-via-the-REST-API
+[8] https://helpx.adobe.com/sign/kb/Getting-an-error-while-sending-agreement-from-Salesforce.html

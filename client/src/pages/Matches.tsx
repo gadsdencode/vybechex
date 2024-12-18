@@ -34,7 +34,7 @@ export default function Matches() {
       
       const ctx = gsap.context(() => {
         // Ensure initial visibility
-        gsap.set([headerRef.current, networkRef.current, cardsRef.current.children], {
+        gsap.set([headerRef.current, networkRef.current, cardsRef.current!.children], {
           autoAlpha: 1
         });
 
