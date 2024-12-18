@@ -50,26 +50,44 @@ function calculateCompatibilityScore(
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
+  // Standardized error response
+  const sendError = (res: Response, status: number, message: string, details?: any, id?: number) => {
+    const response = {
+      success: false,
+      message,
+      ...(details && { details }),
+      ...(app.get('env') === 'development' && { debug: details })
+    };
+    return res.status(status).json(response);
+  };
+
+  // Standardized success response
+  const sendSuccess = (res: Response, data: any, message?: string) => {
+    return res.json({
+      success: true,
+      data,
+      ...(message && { message })
+    });
+  };
+
   // Auth middleware
   const requireAuth = (
     req: Request,
     res: Response,
     next: NextFunction
   ) => {
-    if (!req.isAuthenticated() || !req.user) {
-      return res.status(401).json({ message: "Authentication required" });
+    if (!req.isAuthenticated()) {
+      console.log("User not authenticated");
+      return sendError(res, 401, "Authentication required");
     }
     
-    // Type assertion for authenticated user
     const user = req.user as SelectUser;
-    
-    // Ensure user has required properties
-    if (typeof user.id !== 'number' || typeof user.username !== 'string') {
-      return res.status(401).json({ message: "Invalid user session" });
+    if (!user || typeof user.id === 'undefined') {
+      console.log("Invalid session or user ID not found");
+      return sendError(res, 401, "Invalid session");
     }
     
-    // Attach typed user to request
-    req.user = user;
+    console.log("User authenticated:", user.id);
     next();
   };
 
@@ -128,10 +146,10 @@ export function registerRoutes(app: Express): Server {
           }
         }
 
-        res.json({ message: "Test users created successfully" });
+        return sendSuccess(res, { message: "Test users created successfully" });
       } catch (error) {
         console.error("Error creating test users:", error);
-        res.status(500).json({ message: "Failed to create test users" });
+        return sendError(res, 500, "Failed to create test users", error);
       }
     });
   }
@@ -141,7 +159,17 @@ export function registerRoutes(app: Express): Server {
     try {
       const user = req.user as SelectUser;
       
-      const potentialMatches = await db.select()
+      const potentialMatches = await db.select({
+        id: users.id,
+        username: users.username,
+        name: users.name,
+        personalityTraits: users.personalityTraits,
+        avatar: users.avatar,
+        createdAt: users.createdAt,
+        matchStatus: matches.status,
+        matchId: matches.id,
+        compatibilityScore: sql<number>`0`, // Will be calculated below
+      })
         .from(users)
         .leftJoin(matches, or(
           and(
@@ -158,47 +186,43 @@ export function registerRoutes(app: Express): Server {
           eq(users.quizCompleted, true)
         ));
 
-      // Calculate compatibility scores
-      const currentUserTraits = user.personalityTraits || {};
+      // Transform the data to match the client's expected format
       const matchesWithScores = potentialMatches.map((result) => {
-        const matchUser = result.users;
-        const existingMatch = result.matches;
-        const matchTraits = matchUser.personalityTraits || {};
-        
-        let compatibilityScore = 0;
-        let traitCount = 0;
-
-        // Compare each personality trait
-        for (const trait in currentUserTraits) {
-          if (matchTraits[trait] !== undefined) {
-            const similarity = 1 - Math.abs(currentUserTraits[trait] - matchTraits[trait]);
-            compatibilityScore += similarity;
-            traitCount++;
-          }
-        }
-
-        const score = traitCount > 0 
-          ? Math.round((compatibilityScore / traitCount) * 100)
-          : 0;
+        const score = calculateCompatibilityScore(
+          user.personalityTraits || {},
+          result.personalityTraits || {}
+        );
 
         return {
-          id: matchUser.id.toString(),
-          name: matchUser.name || matchUser.username,
-          username: matchUser.username,
-          avatar: "/default-avatar.png",
-          personalityTraits: matchTraits,
+          id: result.id,
+          username: result.username,
+          name: result.name || result.username,
+          personalityTraits: result.personalityTraits || {},
+          avatar: result.avatar || "/default-avatar.png",
+          createdAt: result.createdAt?.toISOString() || new Date().toISOString(),
+          status: result.matchStatus || 'none',
           compatibilityScore: score,
-          status: existingMatch?.status || 'pending'
+          // Add empty interests array as it's computed on the client side
+          interests: []
         };
       });
 
-      res.json(matchesWithScores.sort((a, b) => b.compatibilityScore - a.compatibilityScore));
+      // Sort by compatibility score and send the array directly
+      const sortedMatches = matchesWithScores
+        .sort((a, b) => b.compatibilityScore - a.compatibilityScore);
+
+      // Debug log
+      console.log('Sending matches response:', {
+        isArray: Array.isArray(sortedMatches),
+        length: sortedMatches.length,
+        sample: sortedMatches[0]
+      });
+
+      // Send the raw array as the response
+      return res.json(sortedMatches);
     } catch (error) {
       console.error("Error fetching matches:", error);
-      res.status(500).json({ 
-        message: "Failed to fetch matches",
-        error: app.get('env') === 'development' ? error : undefined
-      });
+      return sendError(res, 500, "Failed to fetch matches", error);
     }
   });
 
@@ -209,15 +233,12 @@ export function registerRoutes(app: Express): Server {
       const targetId = parseInt(req.params.id);
 
       if (isNaN(targetId)) {
-        return res.status(400).json({ message: "Invalid user ID format" });
+        return sendError(res, 400, "Invalid user ID format");
       }
 
       // Prevent viewing own profile through matches endpoint
       if (currentUser.id === targetId) {
-        return res.status(400).json({ 
-          message: "Invalid request",
-          detail: "Cannot view own profile as a match"
-        });
+        return sendError(res, 400, "Invalid request", "Cannot view own profile as a match");
       }
 
       // Find the target user with limited public information
@@ -234,10 +255,7 @@ export function registerRoutes(app: Express): Server {
       .limit(1);
 
       if (!targetUser || targetUser.length === 0) {
-        return res.status(404).json({ 
-          message: "User not found",
-          detail: `No user exists with ID ${targetId}`
-        });
+        return sendError(res, 404, "User not found", `No user exists with ID ${targetId}`);
       }
 
       // Find if there's an existing match between the users
@@ -264,20 +282,16 @@ export function registerRoutes(app: Express): Server {
       );
 
       // Return user profile with match status
-      return res.status(200).json({
+      return sendSuccess(res, {
         ...targetUser[0],
         matchStatus: matchRecord?.[0]?.status || 'none',
         compatibilityScore,
         canInitiateMatch: !matchRecord || matchRecord.length === 0,
         matchId: matchRecord?.[0]?.id
       });
-
     } catch (error) {
       console.error('Error in match profile endpoint:', error);
-      return res.status(500).json({ 
-        message: "Server error",
-        detail: "Failed to retrieve user profile and match status"
-      });
+      return sendError(res, 500, "Server error", "Failed to retrieve user profile and match status");
     }
   });
 
@@ -288,7 +302,7 @@ export function registerRoutes(app: Express): Server {
       const targetId = parseInt(req.params.id);
 
       if (isNaN(targetId)) {
-        return res.status(400).json({ message: "Invalid user ID format" });
+        return sendError(res, 400, "Invalid user ID format");
       }
 
       // Verify target user exists
@@ -298,10 +312,7 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (!targetUser || targetUser.length === 0) {
-        return res.status(404).json({ 
-          message: "User not found",
-          detail: `No user exists with ID ${targetId}`
-        });
+        return sendError(res, 404, "User not found", `No user exists with ID ${targetId}`);
       }
 
       // Check for existing match
@@ -322,11 +333,7 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (existingMatch && existingMatch.length > 0) {
-        return res.status(400).json({ 
-          message: "Match already exists",
-          detail: "A match already exists between these users",
-          matchId: existingMatch[0].id
-        });
+        return sendError(res, 400, "Match already exists", "A match already exists between these users", existingMatch[0].id);
       }
 
       // Create new match
@@ -339,14 +346,10 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      return res.status(201).json(newMatch);
-
+      return sendSuccess(res, newMatch);
     } catch (error) {
       console.error('Error creating match:', error);
-      return res.status(500).json({ 
-        message: "Server error",
-        detail: "Failed to create match"
-      });
+      return sendError(res, 500, "Server error", "Failed to create match");
     }
   });
 
@@ -357,9 +360,7 @@ export function registerRoutes(app: Express): Server {
       const matchId = parseInt(req.params.id);
       
       if (isNaN(matchId) || matchId <= 0) {
-        return res.status(400).json({ 
-          message: "Invalid match ID. Please provide a valid positive number." 
-        });
+        return sendError(res, 400, "Invalid match ID. Please provide a valid positive number.");
       }
 
       // Check if match already exists
@@ -389,10 +390,10 @@ export function registerRoutes(app: Express): Server {
               .set({ status: 'accepted' })
               .where(eq(matches.id, existingMatch.id))
               .returning();
-            return res.json(updatedMatch);
+            return sendSuccess(res, updatedMatch);
           }
         }
-        return res.json(existingMatch);
+        return sendSuccess(res, existingMatch);
       }
 
       // Create new match request
@@ -406,13 +407,10 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      res.json(newMatch);
+      return sendSuccess(res, newMatch);
     } catch (error) {
       console.error("Error connecting match:", error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : "Failed to connect match",
-        error: app.get('env') === 'development' ? error : undefined
-      });
+      return sendError(res, 500, "Failed to connect match", error);
     }
   });
 
@@ -423,9 +421,7 @@ export function registerRoutes(app: Express): Server {
       const matchId = parseInt(req.params.id);
       
       if (isNaN(matchId) || matchId <= 0) {
-        return res.status(400).json({ 
-          message: "Invalid match ID. Please provide a valid positive number." 
-        });
+        return sendError(res, 400, "Invalid match ID. Please provide a valid positive number.");
       }
 
       // Verify match exists and user is part of it
@@ -444,11 +440,11 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (!match) {
-        return res.status(404).json({ message: "Match not found" });
+        return sendError(res, 404, "Match not found");
       }
 
       if (match.status !== 'accepted') {
-        return res.status(403).json({ message: "Match must be accepted to view messages" });
+        return sendError(res, 403, "Match must be accepted to view messages");
       }
 
       const messageList = await db
@@ -457,19 +453,16 @@ export function registerRoutes(app: Express): Server {
         .where(eq(messages.matchId, matchId))
         .orderBy(desc(messages.createdAt));
 
-      res.json(messageList);
+      return sendSuccess(res, messageList);
     } catch (error) {
       console.error("Error fetching messages:", error);
-      res.status(500).json({ 
-        message: error instanceof Error ? error.message : "Failed to fetch messages",
-        error: app.get('env') === 'development' ? error : undefined
-      });
+      return sendError(res, 500, "Failed to fetch messages", error);
     }
   });
 
   // Quiz submission
   app.post("/api/quiz", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
+    if (!req.user) return sendError(res, 401, "Not authenticated");
     const { traits } = req.body;
     
     console.log("Quiz submission for user:", req.user.id, "traits:", traits);
@@ -486,141 +479,275 @@ export function registerRoutes(app: Express): Server {
       console.log("Updated user:", updatedUser);
 
       // Send back updated user data
-      res.json({ 
-        success: true,
-        user: updatedUser
-      });
+      return sendSuccess(res, { user: updatedUser });
     } catch (error) {
       console.error("Error updating user quiz:", error);
-      res.status(500).json({ 
-        success: false,
-        message: "Failed to update quiz completion status"
-      });
+      return sendError(res, 500, "Failed to update quiz completion status", error);
     }
   });
 
   // Create a match request
-  app.post("/api/matches", async (req, res) => {
-    if (!req.user) {
-      return res.status(401).json({ message: "Not authenticated" });
-    }
-    
+  app.post("/api/matches", requireAuth, async (req, res) => {
     try {
+      const user = req.user as SelectUser;
       const { userId2, score } = req.body;
+      
       if (!userId2 || typeof score !== 'number') {
-        return res.status(400).json({ message: "Invalid request body" });
+        return sendError(res, 400, "Invalid request. userId2 and score are required.");
       }
 
-      // Check if match already exists
-      const [existingMatch] = await db
-        .select()
-        .from(matches)
-        .where(
-          or(
-            and(
-              eq(matches.userId1, req.user.id),
-              eq(matches.userId2, userId2)
-            ),
-            and(
-              eq(matches.userId1, userId2),
-              eq(matches.userId2, req.user.id)
+      // Use a transaction to prevent race conditions
+      const result = await db.transaction(async (tx) => {
+        // Check for existing match
+        const [existingMatch] = await tx
+          .select()
+          .from(matches)
+          .where(
+            or(
+              and(
+                eq(matches.userId1, user.id),
+                eq(matches.userId2, userId2)
+              ),
+              and(
+                eq(matches.userId1, userId2),
+                eq(matches.userId2, user.id)
+              )
             )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (existingMatch) {
-        // If match exists, check if we can update it to accepted
-        if (existingMatch.status === 'requested') {
-          // If the current user is the one who received the request, update to accepted
-          if ((existingMatch.userId1 === userId2 && existingMatch.userId2 === req.user.id) ||
-              (existingMatch.userId2 === userId2 && existingMatch.userId1 === req.user.id)) {
-            const [updatedMatch] = await db
-              .update(matches)
-              .set({ status: 'accepted' })
-              .where(eq(matches.id, existingMatch.id))
-              .returning();
-            return res.json(updatedMatch);
+        if (existingMatch) {
+          if (existingMatch.status === 'requested') {
+            if ((existingMatch.userId1 === userId2 && existingMatch.userId2 === user.id) ||
+                (existingMatch.userId2 === userId2 && existingMatch.userId1 === user.id)) {
+              const [updatedMatch] = await tx
+                .update(matches)
+                .set({ status: 'accepted' })
+                .where(eq(matches.id, existingMatch.id))
+                .returning();
+              return { type: 'updated', match: updatedMatch };
+            }
           }
+          return { type: 'existing', match: existingMatch };
         }
-        // Return the existing match without modification
-        return res.json(existingMatch);
-      }
 
-      // Create new match request
-      const [match] = await db
-        .insert(matches)
-        .values({
-          userId1: req.user.id,
-          userId2: userId2,
-          score: score,
-          status: 'requested'  // Initial state is 'requested'
-        })
-        .returning();
+        // Create new match request
+        const [newMatch] = await tx
+          .insert(matches)
+          .values({
+            userId1: user.id,
+            userId2: userId2,
+            score: score,
+            status: 'requested',
+            createdAt: new Date()
+          })
+          .returning();
+        
+        return { type: 'created', match: newMatch };
+      });
 
-      res.json(match);
+      return sendSuccess(res, result.match, 
+        result.type === 'created' ? 'Match request created' :
+        result.type === 'updated' ? 'Match accepted' :
+        'Existing match found'
+      );
     } catch (error) {
-      console.error("Error creating match:", error);
-      res.status(500).json({ message: "Failed to create match" });
+      console.error("Error in match creation:", error);
+      return sendError(res, 500, "Failed to process match request", error);
     }
   });
 
-  // Accept or reject a match
-  app.patch("/api/matches/:matchId", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-    
-    const { status } = req.body;
-    if (!status || !['accepted', 'rejected'].includes(status)) {
-      return res.status(400).send("Invalid status");
-    }
-
+  // Accept or reject a match request
+  app.patch("/api/matches/:matchId", requireAuth, async (req, res) => {
     try {
+      const user = req.user as SelectUser;
+      const { status } = req.body;
+      
+      if (!status || !['accepted', 'rejected'].includes(status)) {
+        return sendError(res, 400, "Invalid status");
+      }
+
       const matchId = parseInt(req.params.matchId);
       
-      // Get the current match
-      const [currentMatch] = await db
-        .select()
+      // Create aliases for the users table
+      const requesterAlias = users;
+      const receiverAlias = users;
+      
+      // Get the current match with both users' information
+      const matchWithUsers = await db
+        .select({
+          match: matches,
+          requester: {
+            id: requesterAlias.id,
+            username: requesterAlias.username,
+            name: requesterAlias.name,
+            avatar: requesterAlias.avatar,
+            personalityTraits: requesterAlias.personalityTraits
+          },
+          receiver: {
+            id: receiverAlias.id,
+            username: receiverAlias.username,
+            name: receiverAlias.name,
+            avatar: receiverAlias.avatar,
+            personalityTraits: receiverAlias.personalityTraits
+          }
+        })
         .from(matches)
+        .leftJoin(requesterAlias, eq(matches.userId1, requesterAlias.id))
+        .leftJoin(receiverAlias, eq(matches.userId2, receiverAlias.id))
         .where(eq(matches.id, matchId))
         .limit(1);
 
-      if (!currentMatch) {
-        return res.status(404).json({ message: "Match not found" });
+      const currentMatch = matchWithUsers[0];
+
+      if (!currentMatch?.match) {
+        return sendError(res, 404, "Match not found");
       }
 
-      // Verify the user is part of this match
-      if (currentMatch.userId1 !== req.user.id && currentMatch.userId2 !== req.user.id) {
-        return res.status(403).json({ message: "Not authorized to modify this match" });
+      // Verify the user is the receiver of the request
+      if (currentMatch.match.userId2 !== user.id) {
+        return sendError(res, 403, "Only the match recipient can accept or reject the request");
       }
 
-      // Only allow accepting/rejecting pending matches
-      if (currentMatch.status !== 'pending') {
-        return res.status(400).json({ 
-          message: "Can only accept/reject pending matches",
-          currentStatus: currentMatch.status 
-        });
+      // Only allow accepting/rejecting requested matches
+      if (currentMatch.match.status !== 'requested') {
+        return sendError(res, 400, "Can only accept/reject pending match requests", 
+          `Current status: ${currentMatch.match.status}`);
+      }
+
+      // Calculate compatibility score if accepting the match
+      let compatibilityScore = 0;
+      if (status === 'accepted' && currentMatch.requester && currentMatch.receiver) {
+        compatibilityScore = calculateCompatibilityScore(
+          currentMatch.requester.personalityTraits,
+          currentMatch.receiver.personalityTraits
+        );
       }
 
       const [updatedMatch] = await db
         .update(matches)
-        .set({ status })
+        .set({ 
+          status,
+          ...(status === 'accepted' ? { score: compatibilityScore } : {})
+        })
         .where(eq(matches.id, matchId))
         .returning();
 
-      res.json(updatedMatch);
+      // Ensure requester exists before accessing properties
+      const requester = currentMatch.requester ? {
+        id: currentMatch.requester.id,
+        username: currentMatch.requester.username,
+        name: currentMatch.requester.name,
+        avatar: currentMatch.requester.avatar || "/default-avatar.png",
+        personalityTraits: currentMatch.requester.personalityTraits || {}
+      } : null;
+
+      // Ensure receiver exists before accessing properties
+      const receiver = currentMatch.receiver ? {
+        id: currentMatch.receiver.id,
+        username: currentMatch.receiver.username,
+        name: currentMatch.receiver.name,
+        avatar: currentMatch.receiver.avatar || "/default-avatar.png",
+        personalityTraits: currentMatch.receiver.personalityTraits || {}
+      } : null;
+
+      if (!requester || !receiver) {
+        return sendError(res, 500, "Failed to load user details for match");
+      }
+
+      // Prepare response with user details
+      const response = {
+        ...updatedMatch,
+        requester,
+        receiver
+      };
+
+      return sendSuccess(res, response, 
+        status === 'accepted' 
+          ? "Match request accepted! You can now start chatting."
+          : "Match request rejected."
+      );
     } catch (error) {
       console.error("Error updating match:", error);
-      res.status(500).json({ message: "Failed to update match" });
+      return sendError(res, 500, "Failed to update match", error);
     }
   });
 
+  // Get match requests
+  app.get("/api/matches/requests", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as SelectUser;
+      if (!user || typeof user.id !== 'number') {
+        console.error("Invalid user session or ID format", user);
+        return sendError(res, 400, "Invalid user ID format");
+      }
+      console.log("Fetching match requests for user:", user.id);
+      
+      // Get pending requests received by the user
+      const requests = await db
+        .select({
+          id: matches.id,
+          userId1: matches.userId1,
+          userId2: matches.userId2,
+          status: matches.status,
+          score: matches.score,
+          createdAt: matches.createdAt,
+          username: users.username,
+          name: users.name,
+          avatar: users.avatar,
+          personalityTraits: users.personalityTraits
+        })
+        .from(matches)
+        .leftJoin(users, eq(matches.userId1, users.id))
+        .where(
+          and(
+            eq(matches.userId2, user.id),
+            eq(matches.status, 'requested')
+          )
+        )
+        .orderBy(desc(matches.createdAt));
+
+      console.log("Raw match requests:", requests);
+
+      // Transform the response to match client expectations
+      const formattedRequests = requests.map(request => ({
+        id: request.id,
+        username: request.username || '',
+        name: request.name || request.username || '',
+        personalityTraits: request.personalityTraits || {},
+        avatar: request.avatar || '/default-avatar.png',
+        compatibilityScore: calculateCompatibilityScore(
+          user.personalityTraits || {},
+          request.personalityTraits || {}
+        ),
+        interests: [],
+        status: request.status,
+        score: request.score || 0,
+        createdAt: request.createdAt?.toISOString() || new Date().toISOString(),
+        requester: {
+          id: request.userId1,
+          username: request.username || '',
+          name: request.name || request.username || '',
+          avatar: request.avatar || '/default-avatar.png',
+          personalityTraits: request.personalityTraits || {},
+          createdAt: request.createdAt?.toISOString() || new Date().toISOString()
+        }
+      }));
+
+      console.log("Formatted match requests:", formattedRequests);
+      return sendSuccess(res, formattedRequests);
+    } catch (error) {
+      console.error("Error fetching match requests:", error);
+      return sendError(res, 500, "Failed to fetch match requests");
+    }
+  });
 
   // Get AI conversation suggestions
   app.post("/api/suggest", requireAuth, async (req: Request, res: Response) => {
     try {
       const { matchId } = req.body;
       if (!matchId || isNaN(parseInt(matchId))) {
-        return res.status(400).json({ message: "Valid match ID is required" });
+        return sendError(res, 400, "Valid match ID is required");
       }
       
       // Type assertion since requireAuth ensures req.user exists
@@ -648,11 +775,11 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (!matchDetails) {
-        return res.status(404).json({ message: "Match not found" });
+        return sendError(res, 404, "Match not found");
       }
 
       if (matchDetails.status !== 'accepted') {
-        return res.status(403).json({ message: "Match must be accepted to get suggestions" });
+        return sendError(res, 403, "Match must be accepted to get suggestions");
       }
 
       // Get the other user's data
@@ -664,7 +791,7 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (!otherUser) {
-        return res.status(404).json({ message: "Match user not found" });
+        return sendError(res, 404, "Match user not found");
       }
 
       // Get recent chat history
@@ -685,92 +812,142 @@ export function registerRoutes(app: Express): Server {
         req.user!.id
       );
 
-      res.json({ suggestions });
+      return sendSuccess(res, { suggestions });
     } catch (error) {
       console.error("Error generating suggestions:", error);
-      res.status(500).json({ message: "Failed to generate suggestions" });
+      return sendError(res, 500, "Failed to generate suggestions", error);
     }
   });
 
   // Craft a message from a suggestion
-  app.post("/api/craft-message", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-    
+  app.post("/api/craft-message", requireAuth, async (req, res) => {
     try {
+      const user = req.user as SelectUser;
       const { suggestion, matchId } = req.body;
       
-      // Get match's user data for personality traits
-      const [match] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, matchId))
-        .limit(1);
+      if (!suggestion || !matchId) {
+        return sendError(res, 400, "Missing required fields: suggestion and matchId");
+      }
 
-      if (!match) {
-        return res.status(404).send("Match not found");
+      // Join with users table to get personality traits
+      const matchResults = await db
+        .select({
+          match: matches,
+          matchUser: users
+        })
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
+            )
+          )
+        )
+        .leftJoin(users, 
+          or(
+            and(
+              eq(matches.userId1, users.id),
+              ne(users.id, user.id)
+            ),
+            and(
+              eq(matches.userId2, users.id),
+              ne(users.id, user.id)
+            )
+          )
+        );
+
+      const matchWithUser = matchResults[0];
+      
+      if (!matchWithUser) {
+        return sendError(res, 404, "Match not found");
+      }
+
+      if (matchWithUser.match.status !== 'accepted') {
+        return sendError(res, 403, "Match must be accepted to craft messages");
       }
 
       const craftedMessage = await craftMessageFromSuggestion(
         suggestion,
-        req.user.personalityTraits || {},
-        match.personalityTraits || {}
+        user.personalityTraits || {},
+        matchWithUser.matchUser?.personalityTraits || {}
       );
 
-      res.json({ message: craftedMessage });
+      return sendSuccess(res, { message: craftedMessage });
     } catch (error) {
       console.error("Error crafting message:", error);
-      res.status(500).json({ 
-        message: "Failed to craft message",
-        error: error instanceof Error ? error.message : String(error)
-      });
+      return sendError(res, 500, "Failed to craft message", error);
     }
   });
 
-  // Get event suggestions
-  app.post("/api/events/suggest", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-    
+  // Suggest events
+  app.post("/api/events/suggest", requireAuth, async (req, res) => {
     try {
+      const user = req.user as SelectUser;
       const { matchId } = req.body;
       
-      // Get match's user data
-      const [match] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, matchId))
-        .limit(1);
+      if (!matchId) {
+        return sendError(res, 400, "Match ID is required");
+      }
 
-      if (!match) {
-        return res.status(404).send("Match not found");
+      // Join with users table to get personality traits
+      const matchResults = await db
+        .select({
+          match: matches,
+          matchUser: users
+        })
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
+            )
+          )
+        )
+        .leftJoin(users, 
+          or(
+            and(
+              eq(matches.userId1, users.id),
+              ne(users.id, user.id)
+            ),
+            and(
+              eq(matches.userId2, users.id),
+              ne(users.id, user.id)
+            )
+          )
+        );
+
+      const matchWithUser = matchResults[0];
+
+      if (!matchWithUser) {
+        return sendError(res, 404, "Match not found");
+      }
+
+      if (!matchWithUser.matchUser) {
+        return sendError(res, 404, "Match user not found");
       }
 
       const suggestions = await generateEventSuggestions(
-        req.user.personalityTraits || {},
-        match.personalityTraits || {}
+        user.personalityTraits || {},
+        matchWithUser.matchUser.personalityTraits || {}
       );
 
-      res.json({ suggestions });
+      return sendSuccess(res, { suggestions });
     } catch (error) {
       console.error("Error generating event suggestions:", error);
-      res.status(500).json({ 
-        message: "Failed to generate event suggestions",
-        suggestions: [
-          "Visit a local art gallery or museum together",
-          "Have coffee at a quiet café and chat",
-          "Take a walking tour of the city"
-        ]
-      });
+      return sendError(res, 500, "Failed to generate event suggestions", error);
     }
   });
 
   // Get user details
-  app.get("/api/users/:userId", async (req, res) => {
-    if (!req.user) return res.status(401).send("Not authenticated");
-
+  app.get("/api/users/:userId", requireAuth, async (req, res) => {
     try {
       const userId = parseInt(req.params.userId);
       if (isNaN(userId)) {
-        return res.status(400).json({ message: "Invalid user ID" });
+        return sendError(res, 400, "Invalid user ID");
       }
 
       const [user] = await db
@@ -788,13 +965,13 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (!user) {
-        return res.status(404).json({ message: "User not found" });
+        return sendError(res, 404, "User not found");
       }
 
-      res.json(user);
+      return sendSuccess(res, user);
     } catch (error) {
       console.error("Error fetching user:", error);
-      res.status(500).json({ message: "Failed to fetch user details" });
+      return sendError(res, 500, "Failed to fetch user details", error);
     }
   });
 
@@ -803,7 +980,7 @@ export function registerRoutes(app: Express): Server {
     try {
       const matchId = parseInt(req.params.matchId);
       if (isNaN(matchId)) {
-        return res.status(400).json({ message: "Invalid match ID" });
+        return sendError(res, 400, "Invalid match ID");
       }
 
       // Get match with both users' information
@@ -843,7 +1020,11 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (!matchWithUsers) {
-        return res.status(404).json({ message: "Match not found or unauthorized" });
+        return sendError(res, 404, "Match not found or unauthorized");
+      }
+
+      if (!matchWithUsers.matchUser) {
+        return sendError(res, 404, "Match user not found");
       }
 
       // Format response
@@ -874,10 +1055,10 @@ export function registerRoutes(app: Express): Server {
         .map((line: string) => line.replace(/^\d+\.\s*/, ''))
         .slice(0, 3) || [];
 
-      res.json({ suggestions });
+      return sendSuccess(res, { suggestions });
     } catch (error) {
       console.error('Error generating suggestions:', error);
-      res.status(500).json({ message: "Failed to generate suggestions" });
+      return sendError(res, 500, "Failed to generate suggestions", error);
     }
   });
 
@@ -886,13 +1067,13 @@ export function registerRoutes(app: Express): Server {
     try {
       const { matchId } = req.body;
       if (!matchId) {
-        return res.status(400).json({ message: "Match ID is required" });
+        return sendError(res, 400, "Match ID is required");
       }
 
       // Type assertion since requireAuth ensures req.user exists
       const user = req.user as SelectUser;
       if (!user) {
-        return res.status(401).json({ message: "Authentication required" });
+        return sendError(res, 401, "Authentication required");
       }
       
       // Find the match and both users' personality traits
@@ -931,19 +1112,11 @@ export function registerRoutes(app: Express): Server {
         .limit(1);
 
       if (!matchWithUser) {
-        return res.status(404).json({ message: "Match not found or not accepted" });
+        return sendError(res, 404, "Match not found or not accepted");
       }
 
       if (!matchWithUser.matchUser) {
-        return res.status(404).json({ message: "Match user not found" });
-      }
-
-      if (!matchWithUser) {
-        return res.status(404).json({ message: "Match not found or not accepted" });
-      }
-
-      if (!matchWithUser.matchUser) {
-        return res.status(404).json({ message: "Match user not found" });
+        return sendError(res, 404, "Match user not found");
       }
 
       const matchUser = matchWithUser.matchUser;
@@ -973,10 +1146,10 @@ export function registerRoutes(app: Express): Server {
         .map((line: string) => line.replace(/^\d+\.\s*/, ''))
         .slice(0, 3) || [];
 
-      res.json({ suggestions });
+      return sendSuccess(res, { suggestions });
     } catch (error) {
       console.error('Error generating suggestions:', error);
-      res.status(500).json({ message: "Failed to generate suggestions" });
+      return sendError(res, 500, "Failed to generate suggestions", error);
     }
   });
 

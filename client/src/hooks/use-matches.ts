@@ -31,7 +31,26 @@ export interface ExtendedUser {
   createdAt: string;
 }
 
-export type Match = ExtendedUser;
+export interface Match {
+  id: number;
+  username: string;
+  name: string;
+  personalityTraits: Record<string, number>;
+  compatibilityScore: number;
+  interests: Interest[];
+  status: MatchStatus;
+  avatar: string;
+  createdAt: string;
+  score: number;
+  requester?: {
+    id: number;
+    username: string;
+    name: string;
+    avatar: string;
+    personalityTraits: Record<string, number>;
+    createdAt: string;
+  };
+}
 
 interface Message {
   id: number;
@@ -58,41 +77,26 @@ const traitMapping: Record<keyof PersonalityTraits, { name: string; category: In
 
 interface UseMatchesReturn {
   matches: Match[];
+  requests: Match[];
   isLoading: boolean;
+  isResponding: boolean;
   connect: (params: { id: string }) => Promise<Match>;
   getMessages: (matchId: string) => Promise<Message[]>;
   getMatch: (id: string) => Promise<MatchProfile>;
   initiateMatch: (targetId: string) => Promise<Match>;
   useMatchMessages: (matchId: number) => UseQueryResult<Message[], Error>;
   useSendMessage: () => UseMutationResult<Message, Error, { matchId: number; content: string }>;
+  respondToMatch: ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => void;
 }
 
-function handleApiError(error: unknown, title = "Error", defaultMessage = "An unexpected error occurred"): never {
-  console.error(title, error);
-  let message: string;
-  let variant: "default" | "destructive" = "destructive";
-  
+const handleApiError = (error: unknown, prefix: string = "API Error"): never => {
   if (error instanceof Error) {
-    message = error.message;
-    // Handle specific error cases
-    if (message.includes("not found") || message.includes("deleted")) {
-      variant = "default"; // Less aggressive for expected cases
-    }
-  } else if (typeof error === 'string') {
-    message = error;
-  } else {
-    message = defaultMessage;
+    console.error(`${prefix}:`, error);
+    throw new Error(`${prefix} ${error.message}`);
   }
-
-  toast({
-    title,
-    description: message,
-    variant,
-    duration: 5000,
-  });
-  
-  throw new Error(message);
-}
+  console.error(`${prefix}:`, error);
+  throw new Error(`${prefix} Unknown error occurred`);
+};
 
 export function useMatches(): UseMatchesReturn {
   const queryClient = useQueryClient();
@@ -111,31 +115,149 @@ export function useMatches(): UseMatchesReturn {
         }
 
         const data = await response.json();
+        console.log('Matches response:', data);
+
+        if (!Array.isArray(data)) {
+          console.error('Expected array but got:', typeof data, data);
+          if (data?.data && Array.isArray(data.data)) {
+            return data.data;
+          }
+          throw new Error('Invalid response format: expected an array');
+        }
         
-        return data.map((match: any): Match => ({
-          ...match,
-          personalityTraits: match.personalityTraits || {},
-          interests: Object.entries(match.personalityTraits || {})
-            .filter(([trait, value]) => 
-              trait in traitMapping && 
-              typeof value === 'number' &&
-              value >= 0 && 
-              value <= 1
-            )
-            .map(([trait, value]) => ({
-              name: traitMapping[trait as keyof PersonalityTraits].name,
-              score: Math.round(value as number * 100),
-              category: traitMapping[trait as keyof PersonalityTraits].category
-            }))
-            .sort((a, b) => b.score - a.score),
-          avatar: match.avatar || "/default-avatar.png",
-          compatibilityScore: Math.min(100, Math.max(0, match.compatibilityScore || 0))
-        }));
+        return data;
       } catch (error) {
         return handleApiError(error, "Failed to Load Matches");
       }
     }
   });
+
+  const { data: requests = [], isLoading: isLoadingRequests } = useQuery<Match[]>({
+    queryKey: ["match-requests"],
+    queryFn: async () => {
+      try {
+        const response = await fetch("/api/matches/requests", {
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json'
+          }
+        });
+
+        if (!response.ok) {
+          const errorData = await response.json().catch(() => null);
+          if (response.status === 401) {
+            console.error("User not authenticated");
+            throw new Error("Please log in to view match requests");
+          }
+          if (response.status === 400) {
+            console.error("Invalid user ID format", errorData);
+            throw new Error("Invalid user ID format");
+          }
+          console.error("Failed to fetch match requests", errorData);
+          throw new Error(errorData?.message || "Failed to fetch match requests");
+        }
+
+        const data = await response.json();
+        console.log('Matches response:', data);
+
+        if (!data || typeof data !== 'object') {
+          throw new Error('Invalid response format');
+        }
+
+        // Handle both direct array response and wrapped response
+        const matchesData = Array.isArray(data) ? data : (data.data || []);
+        
+        if (!Array.isArray(matchesData)) {
+          throw new Error('Invalid matches data format');
+        }
+
+        // Validate and transform each match
+        return matchesData.map(match => ({
+          id: match.id,
+          username: match.username || '',
+          name: match.name || match.username || '',
+          personalityTraits: match.personalityTraits || {},
+          compatibilityScore: typeof match.compatibilityScore === 'number' ? match.compatibilityScore : (match.score || 0),
+          interests: match.interests || [],
+          status: match.status || 'requested',
+          avatar: match.avatar || '/default-avatar.png',
+          score: match.score || 0,
+          createdAt: match.createdAt || new Date().toISOString(),
+          requester: match.requester ? {
+            id: match.requester.id,
+            username: match.requester.username || '',
+            name: match.requester.name || match.requester.username || '',
+            avatar: match.requester.avatar || '/default-avatar.png',
+            personalityTraits: match.requester.personalityTraits || {},
+            createdAt: match.requester.createdAt || match.createdAt || new Date().toISOString()
+          } : undefined
+        }));
+      } catch (error) {
+        console.error('Match request error:', error);
+        return handleApiError(error, "Failed to Load Match Requests");
+      }
+    },
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes("Please log in")) {
+        return false;
+      }
+      return failureCount < 2;
+    }
+  });
+
+  const { mutate: mutateMatch, isPending: isResponding } = useMutation<
+    Match,
+    Error,
+    { matchId: number; status: 'accepted' | 'rejected' }
+  >({
+    mutationFn: async ({ matchId, status }) => {
+      const response = await fetch(`/api/matches/${matchId}`, {
+        method: 'PATCH',
+        headers: { 
+          "Content-Type": "application/json",
+          "Accept": "application/json"
+        },
+        credentials: 'include',
+        body: JSON.stringify({ status }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to respond to match request" }));
+        throw new Error(errorData.message);
+      }
+
+      return response.json();
+    },
+    onSuccess: (data, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['match-requests'] });
+      
+      toast({
+        title: variables.status === 'accepted' 
+          ? 'Match request accepted!'
+          : 'Match request rejected',
+        description: variables.status === 'accepted'
+          ? 'You can now start chatting with your new match.'
+          : 'The match request has been declined.',
+        variant: "default",
+        duration: 5000,
+      });
+    },
+    onError: (error) => {
+      console.error('Error responding to match:', error);
+      toast({
+        title: "Failed to respond to match request",
+        description: error.message,
+        variant: "destructive",
+        duration: 5000,
+      });
+    }
+  });
+
+  const respondToMatch = ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => {
+    mutateMatch({ matchId, status });
+  };
 
   const connect = async ({ id }: { id: string }): Promise<Match> => {
     try {
@@ -155,11 +277,11 @@ export function useMatches(): UseMatchesReturn {
 
       const toastMessages = {
         accepted: {
-          title: "Match Accepted! 🎉",
+          title: "Match Accepted! ",
           description: "Great news! You're now connected. Click 'Start Chat' to begin your conversation.",
         },
         requested: {
-          title: "Request Sent Successfully ✉️",
+          title: "Request Sent Successfully ",
           description: "Your connection request has been sent. We'll notify you as soon as they respond!",
         },
         pending: {
@@ -315,12 +437,15 @@ export function useMatches(): UseMatchesReturn {
 
   return {
     matches,
-    isLoading,
+    requests,
+    isLoading: isLoading || isLoadingRequests,
+    isResponding,
     connect,
     getMessages,
     getMatch,
     initiateMatch,
     useMatchMessages,
     useSendMessage,
+    respondToMatch
   };
 }

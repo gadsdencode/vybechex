@@ -8,6 +8,8 @@ import { Link } from "wouter";
 import { Button } from "@/components/ui/button";
 import { MatchCard } from "../components/MatchCard";
 import { NetworkGraph } from "../components/NetworkGraph";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { MatchRequests } from "../components/match-requests";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
@@ -15,7 +17,7 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function Matches() {
   const { user } = useUser();
-  const { matches, isLoading, connect } = useMatches();
+  const { matches, requests, isLoading, isResponding, connect, respondToMatch } = useMatches();
   const [showNetwork, setShowNetwork] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<HTMLDivElement>(null);
@@ -96,42 +98,73 @@ export default function Matches() {
         <p className="text-xl text-muted-foreground">Discover your perfect connections</p>
       </div>
 
-      {matches && matches.length > 0 ? (
-        <>
-          <div ref={networkRef} className="mb-16">
-            <h2 className="text-2xl font-semibold mb-6 text-center">Your Connection Network</h2>
-            <div className="bg-card rounded-xl shadow-lg p-6 overflow-hidden">
-              <Button 
-                onClick={() => setShowNetwork(!showNetwork)} 
-                className="mb-4 mx-auto block"
-              >
-                {showNetwork ? "Hide Network" : "Show Network"}
-              </Button>
-              {showNetwork && <NetworkGraph />}
-            </div>
-          </div>
-          
-          <h2 className="text-2xl font-semibold mb-6 text-center">Your Match Cards</h2>
-          <div 
-            ref={cardsRef} 
-            className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 min-h-[200px] relative"
-          >
-            {matches.map((match) => (
-              <div key={match.id} className="opacity-100">
-                <MatchCard match={match} />
+      <Tabs defaultValue="matches" className="mb-16">
+        <TabsList className="mx-auto">
+          <TabsTrigger value="matches">
+            Matches
+            {matches?.length > 0 && (
+              <span className="ml-2 bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs">
+                {matches.length}
+              </span>
+            )}
+          </TabsTrigger>
+          <TabsTrigger value="requests">
+            Requests
+            {requests?.length > 0 && (
+              <span className="ml-2 bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs">
+                {requests.length}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="matches">
+          {matches && matches.length > 0 ? (
+            <>
+              <div ref={networkRef} className="mb-16">
+                <h2 className="text-2xl font-semibold mb-6 text-center">Your Connection Network</h2>
+                <div className="bg-card rounded-xl shadow-lg p-6 overflow-hidden">
+                  <Button 
+                    onClick={() => setShowNetwork(!showNetwork)} 
+                    className="mb-4 mx-auto block"
+                  >
+                    {showNetwork ? "Hide Network" : "Show Network"}
+                  </Button>
+                  {showNetwork && <NetworkGraph />}
+                </div>
               </div>
-            ))}
-          </div>
-        </>
-      ) : (
-        <div className="text-center py-16">
-          <Users className="h-16 w-16 mx-auto mb-6 text-muted-foreground" />
-          <p className="text-xl text-muted-foreground mb-8">No matches found yet. Keep exploring to find compatible friends!</p>
-          <Button asChild size="lg">
-            <Link href="/explore">Explore More</Link>
-          </Button>
-        </div>
-      )}
+              
+              <h2 className="text-2xl font-semibold mb-6 text-center">Your Match Cards</h2>
+              <div 
+                ref={cardsRef} 
+                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8 min-h-[200px] relative"
+              >
+                {matches.map((match) => (
+                  <div key={match.id} className="opacity-100">
+                    <MatchCard match={match} />
+                  </div>
+                ))}
+              </div>
+            </>
+          ) : (
+            <div className="text-center py-16">
+              <Users className="h-16 w-16 mx-auto mb-6 text-muted-foreground" />
+              <p className="text-xl text-muted-foreground mb-8">No matches found yet. Keep exploring to find compatible friends!</p>
+              <Button asChild size="lg">
+                <Link href="/explore">Explore More</Link>
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="requests" className="min-h-[200px]">
+          <MatchRequests
+            requests={requests || []}
+            isResponding={isResponding}
+            onRespond={(matchId, status) => respondToMatch({ matchId, status })}
+          />
+        </TabsContent>
+      </Tabs>
     </div>
   );
 }

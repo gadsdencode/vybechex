@@ -14,18 +14,27 @@ const runMigration = async () => {
   }
 
   // Create the database connection
-  const sql = postgres(connectionString, { max: 1 });
+  const sql = postgres(connectionString, { 
+    max: 10, // Increase connection pool size
+    idle_timeout: 20, // Close idle connections after 20 seconds
+    connect_timeout: 10, // Connection timeout after 10 seconds
+  });
   const db = drizzle(sql);
 
-  // Run migrations
-  console.log('Running migrations...');
-  await migrate(db, {
-    migrationsFolder: path.join(__dirname, 'migrations'),
-  });
-  console.log('Migrations completed successfully');
-
-  // Close the connection
-  await sql.end();
+  try {
+    // Run migrations
+    console.log('Running migrations...');
+    await migrate(db, {
+      migrationsFolder: path.join(__dirname, 'migrations'),
+    });
+    console.log('Migrations completed successfully');
+  } catch (err) {
+    console.error('Migration failed:', err);
+    throw err;
+  } finally {
+    // Close the connection
+    await sql.end();
+  }
 };
 
 runMigration().catch((err) => {

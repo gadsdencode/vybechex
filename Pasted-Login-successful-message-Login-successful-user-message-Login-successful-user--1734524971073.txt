@@ -1,0 +1,141 @@
+Login successful: 
+{message: 'Login successful', user: {…}}
+message
+: 
+"Login successful"
+user
+: 
+avatar
+: 
+"/default-avatar.png"
+id
+: 
+1
+isGroupCreator
+: 
+true
+name
+: 
+null
+quizCompleted
+: 
+true
+username
+: 
+"jmartens10@gmail.com"
+[[Prototype]]
+: 
+Object
+[[Prototype]]
+: 
+Object
+use-user.ts:74 User data fetched: 
+{id: 1, username: 'jmartens10@gmail.com', password: 'f97f581dcb23d3cd9b98c1f24b2ed95fe4cad17a5e982f3fa2…3c044b6cc8d11b64.28f0dffd3234bd76bec9172ef8e6181c', name: null, bio: null, …}
+avatar
+: 
+"/default-avatar.png"
+bio
+: 
+null
+createdAt
+: 
+"2024-12-16T00:19:54.704Z"
+id
+: 
+1
+isGroupCreator
+: 
+true
+name
+: 
+null
+password
+: 
+"f97f581dcb23d3cd9b98c1f24b2ed95fe4cad17a5e982f3fa234bb184e857e90d0222f28c9d34fd41ceae7471c8ca9f1a26f432200c1b55b3c044b6cc8d11b64.28f0dffd3234bd76bec9172ef8e6181c"
+personalityTraits
+: 
+{values: 0.3333333333333333, openness: 0.3333333333333333, planning: 0, sociability: 0.6666666666666666, extraversion: 1, …}
+quizCompleted
+: 
+true
+username
+: 
+"jmartens10@gmail.com"
+[[Prototype]]
+: 
+Object
+use-matches.ts:139 
+ 
+ GET http://localhost:5000/api/matches/requests 400 (Bad Request)
+queryFn	@	use-matches.ts:139
+use-matches.ts:154 
+ Invalid user ID format 
+{success: false, message: 'Invalid user ID format'}
+message
+: 
+"Invalid user ID format"
+success
+: 
+false
+[[Prototype]]
+: 
+Object
+queryFn	@	use-matches.ts:154
+use-matches.ts:197 
+ Match request error: Error: Invalid user ID format
+    at queryFn (use-matches.ts:155:19)
+queryFn	@	use-matches.ts:197
+use-matches.ts:94 
+ Failed to Load Match Requests: Error: Invalid user ID format
+    at queryFn (use-matches.ts:155:19)
+handleApiError	@	use-matches.ts:94
+queryFn	@	use-matches.ts:198
+use-matches.ts:118 Matches response: 
+(4) [{…}, {…}, {…}, {…}]
+0
+: 
+avatar
+: 
+"/default-avatar.png"
+compatibilityScore
+: 
+78
+createdAt
+: 
+"2024-12-17T13:40:22.279Z"
+id
+: 
+5
+interests
+: 
+[]
+name
+: 
+"jordan.martens@osscontact.com"
+personalityTraits
+: 
+{values: 0.3333333333333333, openness: 0, planning: 0.3333333333333333, sociability: 1, extraversion: 1, …}
+status
+: 
+"accepted"
+username
+: 
+"jordan.martens@osscontact.com"
+[[Prototype]]
+: 
+Object
+1
+: 
+{id: 2, username: 'test_user1', name: 'Alex Johnson', personalityTraits: {…}, avatar: '/default-avatar.png', …}
+2
+: 
+{id: 4, username: 'test_user3', name: 'Jordan Lee', personalityTraits: {…}, avatar: '/default-avatar.png', …}
+3
+: 
+{id: 3, username: 'test_user2', name: 'Sam Wilson', personalityTraits: {…}, avatar: '/default-avatar.png', …}
+length
+: 
+4
+[[Prototype]]
+: 
+Array(0)
