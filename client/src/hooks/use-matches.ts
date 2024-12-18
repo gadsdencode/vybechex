@@ -31,9 +31,17 @@ export interface ExtendedUser {
   createdAt: string;
 }
 
-export interface Match extends Omit<ExtendedUser, 'personalityTraits'> {
+export interface Match {
+  id: number;
+  username: string;
+  name: string;
   personalityTraits: Record<string, number>;
-  score?: number;
+  compatibilityScore: number;
+  interests: Interest[];
+  status: MatchStatus;
+  avatar: string;
+  score: number;
+  createdAt: string;
   requester?: {
     id: number;
     username: string;
@@ -98,29 +106,56 @@ export function useMatches(): UseMatchesReturn {
     queryFn: async () => {
       try {
         const response = await fetch("/api/matches", {
-          credentials: 'include'
+          credentials: 'include',
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
         });
+
+        if (response.status === 401) {
+          throw new Error("Please log in to view matches");
+        }
 
         if (!response.ok) {
           const errorData = await response.json().catch(() => ({ message: "Failed to fetch matches" }));
-          throw new Error(errorData.message);
+          throw new Error(errorData.message || "Failed to fetch matches");
         }
 
         const data = await response.json();
         console.log('Matches response:', data);
 
-        if (!Array.isArray(data)) {
-          console.error('Expected array but got:', typeof data, data);
-          if (data?.data && Array.isArray(data.data)) {
-            return data.data;
-          }
-          throw new Error('Invalid response format: expected an array');
-        }
+        // Handle both array response and wrapped response formats
+        const matchesData = Array.isArray(data) ? data : (data.data || []);
         
-        return data;
+        if (!Array.isArray(matchesData)) {
+          console.error('Invalid response format:', typeof matchesData, matchesData);
+          throw new Error('Invalid matches data format');
+        }
+
+        // Validate and transform each match object
+        return matchesData.map(match => ({
+          id: Number(match.id),
+          username: match.username || '',
+          name: match.name || match.username || '',
+          personalityTraits: match.personalityTraits || {},
+          compatibilityScore: typeof match.compatibilityScore === 'number' ? match.compatibilityScore : (match.score || 0),
+          interests: match.interests || [],
+          status: match.status || 'pending',
+          avatar: match.avatar || '/default-avatar.png',
+          score: match.score || 0,
+          createdAt: match.createdAt || new Date().toISOString()
+        }));
       } catch (error) {
-        return handleApiError(error, "Failed to Load Matches");
+        console.error('Match fetching error:', error);
+        throw error;
       }
+    },
+    retry: (failureCount, error) => {
+      if (error instanceof Error && error.message.includes("Please log in")) {
+        return false;
+      }
+      return failureCount < 2;
     }
   });
 
@@ -142,52 +177,77 @@ export function useMatches(): UseMatchesReturn {
             console.error("User not authenticated");
             throw new Error("Please log in to view match requests");
           }
-          if (response.status === 400) {
-            console.error("Invalid user ID format", errorData);
-            throw new Error("Invalid user ID format");
-          }
           console.error("Failed to fetch match requests", errorData);
           throw new Error(errorData?.message || "Failed to fetch match requests");
         }
 
         const data = await response.json();
-        console.log('Matches response:', data);
-
-        if (!data || typeof data !== 'object') {
-          throw new Error('Invalid response format');
-        }
+        console.log('Match requests response:', data);
 
         // Handle both direct array response and wrapped response
         const matchesData = Array.isArray(data) ? data : (data.data || []);
         
         if (!Array.isArray(matchesData)) {
-          throw new Error('Invalid matches data format');
+          console.error('Invalid response format:', typeof matchesData, matchesData);
+          throw new Error('Invalid match requests data format');
         }
 
-        // Validate and transform each match
-        return matchesData.map(match => ({
-          id: match.id,
-          username: match.username || '',
-          name: match.name || match.username || '',
-          personalityTraits: match.personalityTraits || {},
-          compatibilityScore: typeof match.compatibilityScore === 'number' ? match.compatibilityScore : (match.score || 0),
-          interests: match.interests || [],
-          status: match.status || 'requested',
-          avatar: match.avatar || '/default-avatar.png',
-          score: match.score || 0,
-          createdAt: match.createdAt || new Date().toISOString(),
-          requester: match.requester ? {
-            id: match.requester.id,
-            username: match.requester.username || '',
-            name: match.requester.name || match.requester.username || '',
-            avatar: match.requester.avatar || '/default-avatar.png',
-            personalityTraits: match.requester.personalityTraits || {},
-            createdAt: match.requester.createdAt || match.createdAt || new Date().toISOString()
-          } : undefined
-        }));
+        // Validate and transform each match with strict type checking
+        const validMatches = matchesData
+          .map(match => {
+            try {
+              if (!match || typeof match !== 'object') {
+                console.error('Invalid match object:', match);
+                return null;
+              }
+
+              const id = Number(match.id);
+              if (isNaN(id)) {
+                console.error('Invalid match ID:', match.id);
+                return null;
+              }
+
+              const transformedMatch: Match = {
+                id: Number(match.id),
+                username: String(match.username || ''),
+                name: String(match.name || match.username || ''),
+                personalityTraits: match.personalityTraits && typeof match.personalityTraits === 'object' 
+                  ? match.personalityTraits 
+                  : {},
+                compatibilityScore: Number(match.compatibilityScore || match.score || 0),
+                interests: Array.isArray(match.interests) ? match.interests : [],
+                status: match.status && ['requested', 'pending', 'accepted', 'rejected'].includes(match.status) 
+                  ? match.status as MatchStatus 
+                  : 'pending',
+                avatar: String(match.avatar || '/default-avatar.png'),
+                score: Number(match.score || 0),
+                createdAt: match.createdAt ? new Date(match.createdAt).toISOString() : new Date().toISOString()
+              };
+
+              if (match.requester) {
+                transformedMatch.requester = {
+                  id: Number(match.requester.id),
+                  username: String(match.requester.username || ''),
+                  name: String(match.requester.name || match.requester.username || ''),
+                  avatar: String(match.requester.avatar || '/default-avatar.png'),
+                  personalityTraits: typeof match.requester.personalityTraits === 'object' ? match.requester.personalityTraits : {},
+                  createdAt: match.requester.createdAt ? String(match.requester.createdAt) : new Date().toISOString()
+                };
+              }
+
+              return transformedMatch;
+            } catch (err) {
+              console.error('Error transforming match:', match, err);
+              return null;
+            }
+          })
+          .filter((match): match is Match => match !== null);
+
+        console.log('Transformed matches:', validMatches);
+        return validMatches;
       } catch (error) {
         console.error('Match request error:', error);
-        return handleApiError(error, "Failed to Load Match Requests");
+        throw error;
       }
     },
     retry: (failureCount, error) => {
@@ -253,18 +313,50 @@ export function useMatches(): UseMatchesReturn {
 
   const connect = async ({ id }: { id: string }): Promise<Match> => {
     try {
-      const response = await fetch(`/api/matches/${id}/connect`, {
+      // Validate ID before making request
+      const parsedId = parseInt(id, 10);
+      if (isNaN(parsedId) || parsedId <= 0) {
+        throw new Error('Invalid user ID. Please provide a valid positive number.');
+      }
+
+      const response = await fetch(`/api/matches/${parsedId}`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 
+          'Content-Type': 'application/json',
+          'Accept': 'application/json'
+        },
         credentials: 'include'
       });
 
       if (!response.ok) {
-        const data = await response.json();
-        throw new Error(data.message || 'Failed to connect');
+        const errorData = await response.json().catch(() => ({ message: 'Failed to connect' }));
+        throw new Error(errorData.message || 'Failed to establish connection');
       }
 
-      const match = await response.json();
+      const data = await response.json();
+      
+      // Validate response data
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid response format from server');
+      }
+
+      // Transform and validate match data
+      const match: Match = {
+        id: Number(data.id),
+        username: String(data.username || ''),
+        name: String(data.name || data.username || ''),
+        personalityTraits: typeof data.personalityTraits === 'object' ? data.personalityTraits : {},
+        compatibilityScore: Number(data.compatibilityScore || data.score || 0),
+        interests: Array.isArray(data.interests) ? data.interests : [],
+        status: data.status && ['requested', 'pending', 'accepted', 'rejected'].includes(data.status) 
+          ? data.status as MatchStatus 
+          : 'pending',
+        avatar: String(data.avatar || '/default-avatar.png'),
+        score: Number(data.score || 0),
+        createdAt: data.createdAt ? new Date(data.createdAt).toISOString() : new Date().toISOString()
+      };
+
+      // Invalidate queries to refresh data
       queryClient.invalidateQueries({ queryKey: ['matches'] });
 
       const toastMessages = {
