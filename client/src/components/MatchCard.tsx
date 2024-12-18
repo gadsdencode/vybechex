@@ -116,87 +116,87 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   };
 
   return (
-    <Card className="relative transition-all duration-300 hover:shadow-lg hover:scale-105">
-      <CardHeader className="flex flex-row items-center gap-4 p-4">
-        <Avatar className="h-12 w-12">
+    <Card className="relative transition-all duration-300 hover:shadow-lg hover:scale-105 overflow-hidden">
+      <CardHeader className="flex flex-row items-start gap-4 p-6">
+        <Avatar className="h-12 w-12 flex-shrink-0">
           <AvatarImage src={match.avatar || "/default-avatar.png"} alt={match.name || "User"} />
           <AvatarFallback>{(match.name || "?").charAt(0)}</AvatarFallback>
         </Avatar>
-        <div className="flex-1">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-semibold">{match.name || "Anonymous"}</h3>
-            <div className="flex items-center gap-2">
+        <div className="flex-1 min-w-0"> {/* min-w-0 prevents flex child from overflowing */}
+          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
+            <h3 className="text-lg font-semibold truncate">{match.name || "Anonymous"}</h3>
+            <div className="flex items-center gap-2 flex-shrink-0">
               {getStatusBadge()}
               <Button
                 variant="ghost"
                 size="sm"
-                className="p-0 h-8"
+                className="h-8 px-2"
                 onClick={() => setIsExpanded(!isExpanded)}
               >
-                <Badge variant="secondary" className="flex items-center gap-1">
-                  <Zap className="h-3 w-3" />
+                <Badge variant="secondary" className="flex items-center gap-1 whitespace-nowrap">
+                  <Zap className="h-3 w-3 flex-shrink-0" />
                   {Math.round(match.compatibilityScore || match.score || 0)}% Match
                   {isExpanded ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
                 </Badge>
               </Button>
             </div>
           </div>
-          <div className="space-y-1 mt-1">
+          <div className="space-y-2 mt-2">
             {topPersonalityTrait && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <User className="h-3 w-3" />
-                Strong in {topPersonalityTrait.name}
+              <p className="text-sm text-muted-foreground flex items-center gap-2 truncate">
+                <User className="h-3 w-3 flex-shrink-0" />
+                <span>Strong in {topPersonalityTrait.name}</span>
               </p>
             )}
             {topHobby && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <Heart className="h-3 w-3" />
-                Enjoys {topHobby.name}
+              <p className="text-sm text-muted-foreground flex items-center gap-2 truncate">
+                <Heart className="h-3 w-3 flex-shrink-0" />
+                <span>Enjoys {topHobby.name}</span>
               </p>
             )}
             {topValue && (
-              <p className="text-sm text-muted-foreground flex items-center gap-1">
-                <Star className="h-3 w-3" />
-                Values {topValue.name}
+              <p className="text-sm text-muted-foreground flex items-center gap-2 truncate">
+                <Star className="h-3 w-3 flex-shrink-0" />
+                <span>Values {topValue.name}</span>
               </p>
             )}
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-4 pt-0">
+      <CardContent className="px-6 pb-6">
         {isExpanded && (
-            <div className="space-y-4 mt-4 p-4 bg-muted/50 rounded-lg">
-              <div className="space-y-2">
-                <h4 className="font-medium">Why You Match</h4>
-                <p className="text-sm text-muted-foreground">{match.matchExplanation}</p>
-              </div>
-              <div className="space-y-2">
-                <h4 className="font-medium">Compatibility Breakdown</h4>
-                <div className="space-y-1.5">
-                <div className="flex justify-between text-sm">
+          <div className="space-y-6 mb-6 p-4 bg-muted/50 rounded-lg">
+            <div className="space-y-2">
+              <h4 className="font-medium">Why You Match</h4>
+              <p className="text-sm text-muted-foreground break-words">{match.matchExplanation}</p>
+            </div>
+            <div className="space-y-2">
+              <h4 className="font-medium">Compatibility Breakdown</h4>
+              <div className="grid gap-2">
+                <div className="flex justify-between text-sm items-center">
                   <span className="text-muted-foreground">Personality</span>
-                  <span>{match.scoreBreakdown?.components.personality || 0}%</span>
+                  <span className="font-medium">{match.scoreBreakdown?.components.personality || 0}%</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm items-center">
                   <span className="text-muted-foreground">Communication</span>
-                  <span>{match.scoreBreakdown?.components.communication || 0}%</span>
+                  <span className="font-medium">{match.scoreBreakdown?.components.communication || 0}%</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm items-center">
                   <span className="text-muted-foreground">Social</span>
-                  <span>{match.scoreBreakdown?.components.social || 0}%</span>
+                  <span className="font-medium">{match.scoreBreakdown?.components.social || 0}%</span>
                 </div>
-                <div className="flex justify-between text-sm">
+                <div className="flex justify-between text-sm items-center">
                   <span className="text-muted-foreground">Activity</span>
-                  <span>{match.scoreBreakdown?.components.activity || 0}%</span>
+                  <span className="font-medium">{match.scoreBreakdown?.components.activity || 0}%</span>
                 </div>
-              </div>
               </div>
             </div>
-          )}
-          <div className="flex gap-2 mt-4">
-            {getActionButton()}
           </div>
-        </CardContent>
-      </Card>
+        )}
+        <div className="flex gap-2">
+          {getActionButton()}
+        </div>
+      </CardContent>
+    </Card>
   );
 };
