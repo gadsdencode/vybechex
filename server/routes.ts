@@ -785,23 +785,25 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/matches/requests", requireAuth, async (req, res) => {
     try {
       const user = req.user as SelectUser;
-      if (!user?.id) {
+      if (!user?.id || typeof user.id !== 'number') {
+        console.log('Invalid user ID:', user?.id, typeof user?.id);
         return sendError(res, 401, "User not authenticated");
       }
-      
+
       // Get all matches where the current user is the recipient (userId2) and status is 'requested'
-      const matchRequests = await db
-        .select({
-          match: matches,
-          requester: users
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.userId2, user.id),
-            eq(matches.status, 'requested')
+      try {
+        const matchRequests = await db
+          .select({
+            match: matches,
+            requester: users
+          })
+          .from(matches)
+          .where(
+            and(
+              eq(matches.userId2, user.id),
+              eq(matches.status, 'requested')
+            )
           )
-        )
         .innerJoin(users, eq(matches.userId1, users.id))
         .orderBy(desc(matches.createdAt));
 
@@ -820,11 +822,17 @@ export function registerRoutes(app: Express): Server {
         createdAt: request.match.createdAt
       }));
 
-      return res.json({ requests: formattedRequests });
+      return sendSuccess(res, { requests: formattedRequests });
     } catch (error) {
       console.error("Error fetching match requests:", error);
-      return sendError(res, 500, "Failed to fetch match requests");
+      if (error instanceof Error) {
+        return sendError(res, 500, "Failed to fetch match requests", error.message);
+      }
+      return sendError(res, 500, "Failed to fetch match requests", "Unknown error occurred");
     }
+  } finally {
+    console.log('Match requests operation completed');
+  }
   });
 
   // Get AI conversation suggestions
