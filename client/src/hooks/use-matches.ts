@@ -119,8 +119,8 @@ export function useMatches(): UseMatchesReturn {
     queryFn: async () => {
       try {
         const userId = getUserId();
-        if (!userId || isNaN(parseInt(userId))) {
-          console.log('Invalid or missing user ID');
+        if (!userId) {
+          console.log('Missing user ID');
           return [];
         }
 
