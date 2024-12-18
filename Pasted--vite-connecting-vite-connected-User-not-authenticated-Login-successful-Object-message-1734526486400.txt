@@ -1,0 +1,73 @@
+[vite] connecting...
+[vite] connected.
+User not authenticated
+Login successful: 
+Object {message: "Login successful", user: {…}}
+User data fetched: 
+Object {id: 1, username: "jmartens10@gmail.com", password: "f97f581dcb23d3cd9b98c1f24b2ed95fe4cad17a5e982f3fa234bb184e857e90d0222f28c9d34fd41ceae7471c8ca9f1a26…", name: null, bio: null, …}
+Matches response: 
+(4) [{…}, {…}, {…}, {…}]
+Invalid user ID format 
+Object {success: false, message: "Invalid user ID format"}
+
+Match request error: 
+Error {}
+
+Failed to Load Match Requests: 
+Error {}
+
+Invalid user ID format 
+Object {success: false, message: "Invalid user ID format"}
+
+Match request error: 
+Error {}
+
+Failed to Load Match Requests: 
+Error {}
+
+Invalid user ID format 
+Object {success: false, message: "Invalid user ID format"}
+
+Match request error: 
+Error {}
+message: "Invalid user ID format"
+stack: "Error: Invalid user ID format↵ at queryFn (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-matches.ts:66:19)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
+
+Failed to Load Match Requests: 
+Error {}
+
+Invalid user ID format 
+Object {success: false, message: "Invalid user ID format"}
+
+Match request error: 
+Error {}
+message: "Invalid user ID format"
+stack: "Error: Invalid user ID format↵ at queryFn (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-matches.ts:66:19)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
+
+Failed to Load Match Requests: 
+Error {}
+message: "Invalid user ID format"
+stack: "Error: Invalid user ID format↵ at queryFn (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-matches.ts:66:19)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
+
+Invalid user ID format 
+Object {success: false, message: "Invalid user ID format"}
+message: "Invalid user ID format"
+success: false
+[[Prototype]]: Object
+
+Match request error: 
+Error {}
+message: "Invalid user ID format"
+stack: "Error: Invalid user ID format↵ at queryFn (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-matches.ts:66:19)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object

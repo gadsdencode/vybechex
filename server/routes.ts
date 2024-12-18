@@ -70,25 +70,70 @@ export function registerRoutes(app: Express): Server {
     });
   };
 
-  // Auth middleware
+  // Enhanced Auth middleware with comprehensive session validation
   const requireAuth = (
     req: Request,
     res: Response,
     next: NextFunction
   ) => {
-    if (!req.isAuthenticated()) {
-      console.log("User not authenticated");
-      return sendError(res, 401, "Authentication required");
+    try {
+      // Check authentication state
+      if (!req.isAuthenticated()) {
+        console.error("[Auth] User not authenticated:", {
+          session: !!req.session,
+          headers: {
+            auth: !!req.headers.authorization,
+            cookie: !!req.headers.cookie
+          }
+        });
+        return sendError(res, 401, "Authentication required");
+      }
+
+      // Validate session
+      if (!req.session || !req.session.id) {
+        console.error("[Auth] Invalid session state:", {
+          sessionExists: !!req.session,
+          sessionId: req.session?.id
+        });
+        return sendError(res, 401, "Invalid session state");
+      }
+
+      // Validate user object
+      const user = req.user as SelectUser | undefined;
+      if (!user || typeof user.id === 'undefined' || typeof user.id !== 'number') {
+        console.error("[Auth] Invalid user data:", {
+          userExists: !!user,
+          userId: user?.id,
+          userIdType: typeof user?.id
+        });
+        return sendError(res, 401, "Invalid user data");
+      }
+
+      // Additional user data validation
+      if (user.id <= 0 || !Number.isInteger(user.id)) {
+        console.error("[Auth] Invalid user ID format:", {
+          userId: user.id,
+          isInteger: Number.isInteger(user.id)
+        });
+        return sendError(res, 400, "Invalid user ID format");
+      }
+
+      console.log("[Auth] User authenticated successfully:", {
+        userId: user.id,
+        sessionId: req.session.id,
+        timestamp: new Date().toISOString()
+      });
+
+      next();
+    } catch (error) {
+      console.error("[Auth] Unexpected error in authentication middleware:", {
+        error,
+        session: !!req.session,
+        user: !!req.user,
+        timestamp: new Date().toISOString()
+      });
+      return sendError(res, 500, "Authentication system error");
     }
-    
-    const user = req.user as SelectUser;
-    if (!user || typeof user.id === 'undefined') {
-      console.log("Invalid session or user ID not found");
-      return sendError(res, 401, "Invalid session");
-    }
-    
-    console.log("User authenticated:", user.id);
-    next();
   };
 
   // Development-only route to create test users
@@ -673,16 +718,35 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get match requests
-  app.get("/api/matches/requests", requireAuth, async (req, res) => {
+  // Get match requests with comprehensive error handling and type safety
+  app.get("/api/matches/requests", requireAuth, async (req: Request, res: Response) => {
     try {
-      // Type assertion and validation for user object
+      // Type assertion and validation for user object with session context
       const user = req.user as SelectUser | undefined;
+      const sessionId = req.session?.id;
       
-      // Comprehensive user validation
-      if (!user) {
-        console.error("[Match Requests] No user found in session");
-        return sendError(res, 401, "Authentication required");
+      // Comprehensive user and session validation with detailed error logging
+      if (!user || typeof user.id === 'undefined') {
+        console.error("[Match Requests] Authentication error:", {
+          user: user ? 'present' : 'missing',
+          userId: user?.id,
+          sessionId,
+          headers: {
+            auth: req.headers.authorization ? 'present' : 'missing',
+            cookie: req.headers.cookie ? 'present' : 'missing'
+          }
+        });
+        return sendError(res, 401, "Authentication required. Please log in again.");
+      }
+
+      // Validate user session is active and valid
+      if (!req.session || !sessionId) {
+        console.error("[Match Requests] Invalid session:", {
+          userId: user.id,
+          sessionPresent: !!req.session,
+          sessionId
+        });
+        return sendError(res, 401, "Invalid session. Please log in again.");
       }
 
       // Validate user ID with detailed logging
@@ -690,70 +754,128 @@ export function registerRoutes(app: Express): Server {
       console.log("[Match Requests] Processing request for user:", {
         id: userId,
         type: typeof userId,
-        session: !!req.session
+        session: !!req.session,
+        personalityTraits: !!user.personalityTraits
       });
 
-      if (typeof userId !== 'number' || userId <= 0) {
+      // Additional validation for user ID
+      if (typeof userId !== 'number' || userId <= 0 || !Number.isInteger(userId)) {
         console.error("[Match Requests] Invalid user ID:", {
           id: userId,
-          type: typeof userId
+          type: typeof userId,
+          isInteger: Number.isInteger(userId)
         });
         return sendError(res, 400, "Invalid user ID format");
       }
 
       console.log("[Match Requests] Fetching requests for user:", userId);
       
-      // Get pending requests received by the user
-      const requests = await db
-        .select({
-          id: matches.id,
-          userId1: matches.userId1,
-          userId2: matches.userId2,
-          status: matches.status,
-          score: matches.score,
-          createdAt: matches.createdAt,
-          username: users.username,
-          name: users.name,
-          avatar: users.avatar,
-          personalityTraits: users.personalityTraits
-        })
-        .from(matches)
-        .leftJoin(users, eq(matches.userId1, users.id))
-        .where(
-          and(
-            eq(matches.userId2, userId),
-            eq(matches.status, 'requested')
-          )
-        )
-        .orderBy(desc(matches.createdAt));
-
-      console.log("Raw match requests:", requests);
-
-      console.log("Raw match requests:", requests);
-
-      // Transform the response with proper null checks and type safety
-      const formattedRequests = requests.map(request => {
-        // Ensure we have valid base data
-        if (!request || typeof request.id === 'undefined') {
-          console.error("[Match Requests] Invalid request data:", request);
-          return null;
+      // Get pending requests received by the user with enhanced error handling and validation
+      let requests;
+      try {
+        // Verify database connection and configuration
+        if (!db || !process.env.DATABASE_URL) {
+          console.error("[Match Requests] Database configuration error:", {
+            dbExists: !!db,
+            dbUrlExists: !!process.env.DATABASE_URL,
+            timestamp: new Date().toISOString()
+          });
+          return sendError(res, 500, "Database configuration error");
         }
 
-        // Calculate compatibility score with proper null checks
-        const compatibilityScore = calculateCompatibilityScore(
-          user?.personalityTraits || {},
-          request?.personalityTraits || {}
-        );
+        // Verify database health with a test query
+        try {
+          await db.select().from(users).limit(1);
+        } catch (healthCheckError) {
+          console.error("[Match Requests] Database health check failed:", {
+            error: healthCheckError,
+            timestamp: new Date().toISOString()
+          });
+          return sendError(res, 500, "Database connection error");
+        }
 
-        // Format the request with guaranteed values
-        return {
+        // Execute database query with proper type safety and error boundaries
+        requests = await db
+          .select({
+            id: matches.id,
+            userId1: matches.userId1,
+            userId2: matches.userId2,
+            status: matches.status,
+            score: matches.score,
+            createdAt: matches.createdAt,
+            username: users.username,
+            name: users.name,
+            avatar: users.avatar,
+            personalityTraits: users.personalityTraits
+          })
+          .from(matches)
+          .leftJoin(users, eq(matches.userId1, users.id))
+          .where(
+            and(
+              eq(matches.userId2, userId),
+              eq(matches.status, 'requested')
+            )
+          )
+          .orderBy(desc(matches.createdAt));
+
+        // Verify query result structure
+        if (requests === null || requests === undefined) {
+          console.error("[Match Requests] Null or undefined query result");
+          return sendError(res, 500, "Failed to retrieve match requests");
+        }
+
+        console.log("[Match Requests] Database query successful:", {
+          count: requests?.length || 0,
+          timestamp: new Date().toISOString()
+        });
+      } catch (dbError) {
+        console.error("[Match Requests] Database query failed:", {
+          error: dbError,
+          userId,
+          timestamp: new Date().toISOString()
+        });
+        return sendError(res, 500, "Failed to fetch match requests from database");
+      }
+
+      // Additional validation for requests array
+      if (!Array.isArray(requests)) {
+        console.error("[Match Requests] Invalid response format:", {
+          requests,
+          type: typeof requests
+        });
+        return sendError(res, 500, "Invalid response format from database");
+      }
+
+      console.log("[Match Requests] Raw requests data:", {
+        count: requests.length,
+        sample: requests[0],
+        timestamp: new Date().toISOString()
+      });
+
+      // Transform the response with comprehensive null checks and type safety
+      const formattedRequests = requests
+        .filter(request => {
+          if (!request || typeof request.id !== 'number') {
+            console.error("[Match Requests] Invalid request data:", {
+              request,
+              userId,
+              timestamp: new Date().toISOString()
+            });
+            return false;
+          }
+          return true;
+        })
+        .map(request => ({
           id: request.id,
           username: request.username || '',
           name: request.name || request.username || '',
           personalityTraits: request.personalityTraits || {},
           avatar: request.avatar || '/default-avatar.png',
-          compatibilityScore,
-          interests: [], // Initialize empty array as required by frontend
+          compatibilityScore: calculateCompatibilityScore(
+            user.personalityTraits || {},
+            request.personalityTraits || {}
+          ),
+          interests: [], // Required by frontend contract
           status: request.status || 'requested',
           score: request.score || 0,
           createdAt: request.createdAt?.toISOString() || new Date().toISOString(),
@@ -765,13 +887,22 @@ export function registerRoutes(app: Express): Server {
             personalityTraits: request.personalityTraits || {},
             createdAt: request.createdAt?.toISOString() || new Date().toISOString()
           }
-        };
-      }).filter(Boolean); // Remove any null entries
+        }));
 
-      console.log("Formatted match requests:", formattedRequests);
+      console.log("[Match Requests] Formatted response:", {
+        count: formattedRequests.length,
+        sample: formattedRequests[0],
+        timestamp: new Date().toISOString()
+      });
+
       return sendSuccess(res, formattedRequests);
     } catch (error) {
-      console.error("Error fetching match requests:", error);
+      console.error("[Match Requests] Error processing request:", {
+        error,
+        userId: req.user?.id,
+        timestamp: new Date().toISOString(),
+        stack: error instanceof Error ? error.stack : undefined
+      });
       return sendError(res, 500, "Failed to fetch match requests");
     }
   });
