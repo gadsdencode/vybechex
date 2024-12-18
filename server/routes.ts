@@ -193,36 +193,8 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // First verify the user has completed their profile
-      if (!user.personalityTraits || Object.keys(user.personalityTraits).length === 0) {
-        return res.status(403).json({ 
-          message: "Please complete your personality profile before viewing matches." 
-        });
-      }
-
-      // Then verify the user has access to this match
-      const [existingMatch] = await db
-        .select()
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
-            )
-          )
-        )
-        .limit(1);
-
-      if (!existingMatch) {
-        return res.status(404).json({ 
-          message: "Match not found or you don't have access to view it" 
-        });
-      }
-
-      // Fetch full match details
-      const [matchDetails] = await db
+      // Get match with both users' information in a single query
+      const [matchWithUsers] = await db
         .select({
           match: {
             id: matches.id,
@@ -239,7 +211,15 @@ export function registerRoutes(app: Express): Server {
           }
         })
         .from(matches)
-        .where(eq(matches.id, matchId))
+        .where(
+          and(
+            eq(matches.id, matchId),
+            or(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
+            )
+          )
+        )
         .leftJoin(
           users,
           eq(users.id,
@@ -251,20 +231,15 @@ export function registerRoutes(app: Express): Server {
         )
         .limit(1);
 
-      if (!matchDetails) {
-        return res.status(404).json({
-          message: "Match not found. It may have been deleted or you may not have access."
+      if (!matchWithUsers || !matchWithUsers.matchUser) {
+        return res.status(404).json({ 
+          message: "Match not found or you don't have access to view it" 
         });
       }
 
-      const { match, matchUser } = matchDetails;
+      const { match, matchUser } = matchWithUsers;
 
-      if (!matchUser) {
-        return res.status(404).json({
-          message: "Match user details not found. The user may have been deleted."
-        });
-      }
-
+      // Verify the match user has completed their profile
       if (!matchUser.personalityTraits || Object.keys(matchUser.personalityTraits).length === 0) {
         return res.status(403).json({
           message: "Match user has not completed their personality profile."
@@ -276,7 +251,7 @@ export function registerRoutes(app: Express): Server {
       const matchTraits = matchUser.personalityTraits || {};
       
       const traitScores = Object.entries(userTraits)
-        .filter(([trait, value]): value is number => 
+        .filter(([trait, value]) => 
           trait in matchTraits && 
           typeof value === 'number' &&
           typeof matchTraits[trait] === 'number'
@@ -292,13 +267,13 @@ export function registerRoutes(app: Express): Server {
 
       return res.json({
         id: match.id,
-        status: match.status,
-        createdAt: match.createdAt,
-        compatibilityScore,
-        name: matchUser.name || matchUser.username,
         username: matchUser.username,
+        name: matchUser.name || matchUser.username,
         personalityTraits: matchTraits,
-        avatar: "/default-avatar.png"
+        compatibilityScore,
+        status: match.status,
+        avatar: "/default-avatar.png",
+        createdAt: match.createdAt
       });
 
     } catch (error) {

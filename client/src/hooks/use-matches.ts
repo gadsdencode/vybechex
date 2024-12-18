@@ -195,33 +195,18 @@ export function useMatches(): UseMatchesReturn {
         }
       });
 
-      const data = await response.json().catch(() => null);
-
-      if (!response.ok || !data) {
-        let errorMessage = 'Failed to fetch match details';
-        
-        if (data?.message) {
-          errorMessage = data.message;
-        } else {
-          switch (response.status) {
-            case 401:
-              errorMessage = 'Please log in to view match details';
-              break;
-            case 403:
-              errorMessage = 'Please complete your profile before viewing matches';
-              break;
-            case 404:
-              errorMessage = 'Match not found or you may not have access';
-              break;
-            default:
-              errorMessage = `Server error: ${response.statusText}`;
-          }
-        }
-        
-        throw new Error(errorMessage);
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to fetch match details" }));
+        throw new Error(errorData.message || "Failed to fetch match details");
       }
 
-      // Transform and validate the match data
+      const data = await response.json();
+      
+      if (!data || typeof data !== 'object') {
+        throw new Error('Invalid match data received from server');
+      }
+
+      // Transform and validate the match data with default values
       return {
         id: data.id,
         username: data.username || 'Unknown User',
