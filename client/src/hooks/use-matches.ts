@@ -62,13 +62,28 @@ interface UseMatchesReturn {
 
 function handleApiError(error: unknown, title = "Error", defaultMessage = "An unexpected error occurred"): never {
   console.error(title, error);
-  const message = error instanceof Error ? error.message : defaultMessage;
+  let message: string;
+  let variant: "default" | "destructive" = "destructive";
+  
+  if (error instanceof Error) {
+    message = error.message;
+    // Handle specific error cases
+    if (message.includes("not found") || message.includes("deleted")) {
+      variant = "default"; // Less aggressive for expected cases
+    }
+  } else if (typeof error === 'string') {
+    message = error;
+  } else {
+    message = defaultMessage;
+  }
+
   toast({
     title,
     description: message,
-    variant: "destructive",
+    variant,
     duration: 5000,
   });
+  
   throw new Error(message);
 }
 
@@ -175,37 +190,56 @@ export function useMatches(): UseMatchesReturn {
       const response = await fetch(`/api/matches/${matchId}`, {
         credentials: 'include',
         headers: {
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
         }
       });
 
-      if (!response.ok) {
-        if (response.status === 404) {
-          throw new Error('Match not found. It may have been deleted or you may not have access.');
-        }
-        if (response.status === 401) {
-          throw new Error('Please log in to view match details.');
-        }
-        if (response.status === 403) {
-          throw new Error('Please complete your profile before viewing matches.');
-        }
-
-        const errorData = await response.json().catch(() => ({ message: 'Server error' }));
-        throw new Error(errorData.message || `Failed to fetch match: ${response.statusText}`);
+      let errorData;
+      try {
+        errorData = await response.json();
+      } catch (e) {
+        errorData = { message: 'Server error' };
       }
 
-      const data = await response.json();
-      
+      if (!response.ok) {
+        let errorMessage = '';
+        switch (response.status) {
+          case 401:
+            errorMessage = 'Please log in to view match details.';
+            break;
+          case 403:
+            errorMessage = 'Please complete your profile before viewing matches.';
+            break;
+          case 404:
+            errorMessage = 'Match not found. It may have been deleted or you may not have access.';
+            break;
+          default:
+            errorMessage = errorData.message || `Failed to fetch match: ${response.statusText}`;
+        }
+        throw new Error(errorMessage);
+      }
+
+      const data = errorData; // We already parsed the response
+
+      if (!data) {
+        throw new Error('No data received from server');
+      }
+
       // Validate required fields
-      if (!data?.id || !data?.status || !data?.personalityTraits) {
-        throw new Error('Invalid match data received from server');
+      if (!data.id || typeof data.id !== 'number') {
+        throw new Error('Invalid match ID received from server');
+      }
+
+      if (!data.status || !['requested', 'pending', 'accepted', 'rejected'].includes(data.status)) {
+        throw new Error('Invalid match status received from server');
       }
 
       // Transform and validate the match data
       const match: Match = {
-        id: matchId,
-        username: data.username,
-        name: data.name || data.username,
+        id: data.id,
+        username: data.username || 'Unknown User',
+        name: data.name || data.username || 'Unknown User',
         personalityTraits: data.personalityTraits || {},
         compatibilityScore: Math.min(100, Math.max(0, data.compatibilityScore || 0)),
         interests: Object.entries(data.personalityTraits || {})
@@ -223,12 +257,15 @@ export function useMatches(): UseMatchesReturn {
           .sort((a, b) => b.score - a.score),
         status: data.status,
         avatar: data.avatar || "/default-avatar.png",
-        createdAt: data.createdAt
+        createdAt: data.createdAt || new Date().toISOString()
       };
 
       return match;
     } catch (error) {
-      return handleApiError(error, "Failed to Fetch Match", "Unable to load match details. Please try again later.");
+      console.error('Match fetching error:', error);
+      // Don't return from handleApiError, let it throw
+      handleApiError(error, "Failed to Fetch Match", "Unable to load match details. Please try again later.");
+      throw error; // This line won't be reached due to handleApiError throwing
     }
   };
 
