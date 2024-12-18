@@ -116,7 +116,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   };
 
   return (
-    <Card className="overflow-hidden transition-all duration-300 hover:shadow-lg hover:scale-105">
+    <Card className="relative transition-all duration-300 hover:shadow-lg hover:scale-105">
       <CardHeader className="flex flex-row items-center gap-4 p-4">
         <Avatar className="h-12 w-12">
           <AvatarImage src={match.avatar || "/default-avatar.png"} alt={match.name || "User"} />

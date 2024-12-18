@@ -61,9 +61,11 @@ export function MatchInsightTooltip({
           </Button>
         </TooltipTrigger>
         <TooltipContent 
-          className="w-80 p-4 z-50 max-h-[300px] overflow-y-auto"
+          className="w-80 p-4 max-h-[300px] overflow-y-auto bg-popover border rounded-md shadow-md"
           side="right"
-          sideOffset={5}
+          sideOffset={10}
+          forceMount
+          style={{ zIndex: 9999 }}
         >
           <div className="space-y-2">
             <h4 className="font-semibold">{getCompatibilityInsight()}</h4>
