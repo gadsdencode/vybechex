@@ -41,6 +41,12 @@ interface Message {
   createdAt: string;
 }
 
+interface MatchProfile extends ExtendedUser {
+  matchStatus: 'none' | 'pending' | 'accepted' | 'rejected';
+  canInitiateMatch: boolean;
+  matchId?: number;
+}
+
 const traitMapping: Record<keyof PersonalityTraits, { name: string; category: Interest['category'] }> = {
   extraversion: { name: "Social Activities", category: "personality" },
   openness: { name: "Trying New Things", category: "personality" },
@@ -55,7 +61,8 @@ interface UseMatchesReturn {
   isLoading: boolean;
   connect: (params: { id: string }) => Promise<Match>;
   getMessages: (matchId: string) => Promise<Message[]>;
-  getMatch: (id: string) => Promise<Match>;
+  getMatch: (id: string) => Promise<MatchProfile>;
+  initiateMatch: (targetId: string) => Promise<Match>;
   useMatchMessages: (matchId: number) => UseQueryResult<Message[], Error>;
   useSendMessage: () => UseMutationResult<Message, Error, { matchId: number; content: string }>;
 }
@@ -176,7 +183,7 @@ export function useMatches(): UseMatchesReturn {
     }
   };
 
-  const getMatch = async (id: string): Promise<Match> => {
+  const getMatch = async (id: string): Promise<MatchProfile> => {
     try {
       if (!id?.trim()) {
         throw new Error('Match ID is required');
@@ -195,68 +202,51 @@ export function useMatches(): UseMatchesReturn {
         }
       });
 
+      if (response.status === 401) {
+        throw new Error('Please log in to view this profile');
+      }
+
+      if (response.status === 404) {
+        throw new Error('User not found');
+      }
+
       if (!response.ok) {
-        const errorText = await response.text();
-        let errorMessage: string;
-        
-        try {
-          const errorData = JSON.parse(errorText);
-          errorMessage = errorData.message || "Failed to fetch match details";
-        } catch {
-          errorMessage = errorText || "Failed to fetch match details";
-        }
-
-        console.error('Match fetch failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          errorMessage
-        });
-        
-        throw new Error(errorMessage);
+        const errorData = await response.json().catch(() => ({ message: "Failed to fetch profile details" }));
+        throw new Error(errorData.message);
       }
 
-      const data = await response.json();
-      
-      if (!data || typeof data !== 'object') {
-        console.error('Invalid match data:', data);
-        throw new Error('Invalid match data received from server');
-      }
-
-      console.log('Match data received:', data);
-
-      // Transform and validate the match data with default values
-      return {
-        id: matchId,
-        username: data.username || 'Unknown User',
-        name: data.name || data.username || 'Unknown User',
-        personalityTraits: data.personalityTraits || {},
-        compatibilityScore: Math.min(100, Math.max(0, data.compatibilityScore || 0)),
-        interests: Object.entries(data.personalityTraits || {})
-          .filter(([trait, value]) => 
-            trait in traitMapping && 
-            typeof value === 'number' &&
-            value >= 0 && 
-            value <= 1
-          )
-          .map(([trait, value]) => ({
-            name: traitMapping[trait as keyof PersonalityTraits].name,
-            score: Math.round(value as number * 100),
-            category: traitMapping[trait as keyof PersonalityTraits].category
-          }))
-          .sort((a, b) => b.score - a.score),
-        status: data.status || 'pending',
-        avatar: data.avatar || "/default-avatar.png",
-        createdAt: data.createdAt || new Date().toISOString()
-      };
+      return await response.json();
     } catch (error) {
-      // Add more context to the error
-      const enhancedError = new Error(
-        error instanceof Error 
-          ? `Match fetch failed: ${error.message}`
-          : 'Failed to fetch match details'
-      );
-      console.error('Match fetching error:', enhancedError);
-      throw enhancedError;
+      console.error('Profile fetching error:', error);
+      throw error;
+    }
+  };
+
+  const initiateMatch = async (targetId: string): Promise<Match> => {
+    try {
+      const response = await fetch(`/api/matches/${targetId}`, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Content-Type': 'application/json'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ message: "Failed to create match" }));
+        throw new Error(errorData.message);
+      }
+
+      const newMatch = await response.json();
+      
+      // Invalidate queries to refetch updated data
+      await queryClient.invalidateQueries({ queryKey: ["matches", parseInt(targetId)] });
+      
+      return newMatch;
+    } catch (error) {
+      console.error('Match creation error:', error);
+      throw error;
     }
   };
 
@@ -329,6 +319,7 @@ export function useMatches(): UseMatchesReturn {
     connect,
     getMessages,
     getMatch,
+    initiateMatch,
     useMatchMessages,
     useSendMessage,
   };

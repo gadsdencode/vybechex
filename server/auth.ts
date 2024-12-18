@@ -8,8 +8,16 @@ import { promisify } from "util";
 import { users, insertUserSchema, type User as SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
+import { z } from "zod";
 
 const scryptAsync = promisify(scrypt);
+
+// Add login schema
+const loginSchema = insertUserSchema.pick({
+  username: true,
+  password: true,
+});
+
 export const crypto = {
   hash: async (password: string) => {
     const salt = randomBytes(16).toString("hex");
@@ -47,8 +55,10 @@ export function setupAuth(app: Express) {
     saveUninitialized: false,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: app.get("env") === "production",
-      sameSite: "lax"
+      secure: process.env.NODE_ENV === 'production', // Only use secure in production
+      sameSite: "lax",
+      httpOnly: true,
+      path: '/'
     },
     store: new MemoryStore({
       checkPeriod: 86400000, // prune expired entries every 24h
@@ -63,7 +73,18 @@ export function setupAuth(app: Express) {
     new LocalStrategy(async (username, password, done) => {
       try {
         const [user] = await db
-          .select()
+          .select({
+            id: users.id,
+            username: users.username,
+            password: users.password,
+            name: users.name,
+            bio: users.bio,
+            quizCompleted: users.quizCompleted,
+            personalityTraits: users.personalityTraits,
+            createdAt: users.createdAt,
+            isGroupCreator: users.isGroupCreator,
+            avatar: users.avatar
+          })
           .from(users)
           .where(eq(users.username, username))
           .limit(1);
@@ -77,6 +98,7 @@ export function setupAuth(app: Express) {
         }
         return done(null, user);
       } catch (err) {
+        console.error('Auth error:', err);
         return done(err);
       }
     })
@@ -89,7 +111,18 @@ export function setupAuth(app: Express) {
   passport.deserializeUser(async (id: number, done) => {
     try {
       const [user] = await db
-        .select()
+        .select({
+          id: users.id,
+          username: users.username,
+          password: users.password,
+          name: users.name,
+          bio: users.bio,
+          quizCompleted: users.quizCompleted,
+          personalityTraits: users.personalityTraits,
+          createdAt: users.createdAt,
+          isGroupCreator: users.isGroupCreator,
+          avatar: users.avatar
+        })
         .from(users)
         .where(eq(users.id, id))
         .limit(1);
@@ -100,6 +133,7 @@ export function setupAuth(app: Express) {
       
       return done(null, user);
     } catch (err) {
+      console.error('Session deserialize error:', err);
       return done(err);
     }
   });
@@ -153,35 +187,68 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/login", (req, res, next) => {
-    const result = insertUserSchema.safeParse(req.body);
-    if (!result.success) {
-      return res
-        .status(400)
-        .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
-    }
-
-    const cb = (err: any, user: Express.User, info: IVerifyOptions) => {
-      if (err) {
-        return next(err);
-      }
-
-      if (!user) {
-        return res.status(400).send(info.message ?? "Login failed");
-      }
-
-      req.logIn(user, (err) => {
-        if (err) {
-          return next(err);
-        }
-
-        return res.json({
-          message: "Login successful",
-          user: { id: user.id, username: user.username },
-        });
+  app.post("/api/login", async (req, res) => {
+    try {
+      const loginSchema = z.object({
+        username: z.string().min(1, "Username is required"),
+        password: z.string().min(1, "Password is required"),
       });
-    };
-    passport.authenticate("local", cb)(req, res, next);
+
+      const result = loginSchema.safeParse(req.body);
+      if (!result.success) {
+        return res.status(400).json({ 
+          message: "Invalid input", 
+          errors: result.error.issues.map(i => i.message)
+        });
+      }
+
+      return new Promise((resolve) => {
+        passport.authenticate("local", (err: any, user: Express.User | false, info: IVerifyOptions) => {
+          if (err) {
+            console.error("Login error:", err);
+            return res.status(500).json({ 
+              message: "Internal server error during login",
+              error: app.get('env') === 'development' ? err.message : undefined
+            });
+          }
+
+          if (!user) {
+            return res.status(401).json({ 
+              message: info?.message || "Invalid username or password"
+            });
+          }
+
+          req.logIn(user, (loginErr) => {
+            if (loginErr) {
+              console.error("Session error:", loginErr);
+              return res.status(500).json({ 
+                message: "Failed to create session",
+                error: app.get('env') === 'development' ? loginErr.message : undefined
+              });
+            }
+
+            res.json({
+              message: "Login successful",
+              user: {
+                id: user.id,
+                username: user.username,
+                name: user.name,
+                quizCompleted: user.quizCompleted,
+                isGroupCreator: user.isGroupCreator,
+                avatar: user.avatar
+              },
+            });
+            resolve(true);
+          });
+        })(req, res);
+      });
+    } catch (error) {
+      console.error("Unexpected error during login:", error);
+      res.status(500).json({ 
+        message: "An unexpected error occurred",
+        error: app.get('env') === 'development' ? error : undefined 
+      });
+    }
   });
 
   app.post("/api/logout", (req, res) => {

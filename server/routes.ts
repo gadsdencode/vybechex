@@ -26,6 +26,27 @@ declare global {
   }
 }
 
+// Utility function to calculate compatibility score between two users
+function calculateCompatibilityScore(
+  traits1: Record<string, number> | null | undefined,
+  traits2: Record<string, number> | null | undefined
+): number {
+  if (!traits1 || !traits2) return 0;
+
+  const commonTraits = Object.keys(traits1).filter(trait => trait in traits2);
+  if (commonTraits.length === 0) return 0;
+
+  const totalDifference = commonTraits.reduce((sum, trait) => {
+    const value1 = traits1[trait] || 0;
+    const value2 = traits2[trait] || 0;
+    // Calculate similarity (1 - difference)
+    return sum + (1 - Math.abs(value1 - value2));
+  }, 0);
+
+  // Return percentage (0-100)
+  return Math.round((totalDifference / commonTraits.length) * 100);
+}
+
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
 
@@ -181,140 +202,150 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get a single match by ID with proper validation and error handling
+  // Get user profile and match status
   app.get("/api/matches/:id", requireAuth, async (req, res) => {
     try {
-      const user = req.user as SelectUser;
-      const matchId = parseInt(req.params.id);
-      
-      console.log('Fetching match:', { matchId, userId: user.id });
-      
-      if (isNaN(matchId) || matchId <= 0) {
+      const currentUser = req.user as SelectUser;
+      const targetId = parseInt(req.params.id);
+
+      if (isNaN(targetId)) {
+        return res.status(400).json({ message: "Invalid user ID format" });
+      }
+
+      // Prevent viewing own profile through matches endpoint
+      if (currentUser.id === targetId) {
         return res.status(400).json({ 
-          message: "Invalid match ID. Please provide a valid positive number." 
+          message: "Invalid request",
+          detail: "Cannot view own profile as a match"
         });
       }
 
-      // First check if the match exists at all
-      const [matchExists] = await db
-        .select({ id: matches.id })
-        .from(matches)
-        .where(eq(matches.id, matchId))
-        .limit(1);
+      // Find the target user with limited public information
+      const targetUser = await db.select({
+        id: users.id,
+        username: users.username,
+        name: users.name,
+        avatar: users.avatar,
+        personalityTraits: users.personalityTraits,
+        createdAt: users.createdAt
+      })
+      .from(users)
+      .where(eq(users.id, targetId))
+      .limit(1);
 
-      if (!matchExists) {
-        console.log('Match not found:', { matchId });
+      if (!targetUser || targetUser.length === 0) {
         return res.status(404).json({ 
-          message: "Match not found" 
+          message: "User not found",
+          detail: `No user exists with ID ${targetId}`
         });
       }
 
-      // Then get match with both users' information in a single query
-      const [matchWithUsers] = await db
-        .select({
-          match: {
-            id: matches.id,
-            status: matches.status,
-            createdAt: matches.createdAt,
-            userId1: matches.userId1,
-            userId2: matches.userId2
-          },
-          matchUser: {
-            id: users.id,
-            username: users.username,
-            name: users.name,
-            personalityTraits: users.personalityTraits
-          }
-        })
+      // Find if there's an existing match between the users
+      const matchRecord = await db.select()
         .from(matches)
         .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
+          or(
+            and(
+              eq(matches.userId1, currentUser.id),
+              eq(matches.userId2, targetId)
+            ),
+            and(
+              eq(matches.userId1, targetId),
+              eq(matches.userId2, currentUser.id)
             )
           )
         )
-        .leftJoin(
-          users,
-          eq(users.id,
-            sql`CASE 
-              WHEN ${matches.userId1} = ${user.id} THEN ${matches.userId2}
-              ELSE ${matches.userId1}
-            END`
+        .limit(1);
+
+      // Calculate basic compatibility score
+      const compatibilityScore = calculateCompatibilityScore(
+        currentUser.personalityTraits,
+        targetUser[0].personalityTraits
+      );
+
+      // Return user profile with match status
+      return res.status(200).json({
+        ...targetUser[0],
+        matchStatus: matchRecord?.[0]?.status || 'none',
+        compatibilityScore,
+        canInitiateMatch: !matchRecord || matchRecord.length === 0,
+        matchId: matchRecord?.[0]?.id
+      });
+
+    } catch (error) {
+      console.error('Error in match profile endpoint:', error);
+      return res.status(500).json({ 
+        message: "Server error",
+        detail: "Failed to retrieve user profile and match status"
+      });
+    }
+  });
+
+  // Create new match
+  app.post("/api/matches/:id", requireAuth, async (req, res) => {
+    try {
+      const currentUser = req.user as SelectUser;
+      const targetId = parseInt(req.params.id);
+
+      if (isNaN(targetId)) {
+        return res.status(400).json({ message: "Invalid user ID format" });
+      }
+
+      // Verify target user exists
+      const targetUser = await db.select()
+        .from(users)
+        .where(eq(users.id, targetId))
+        .limit(1);
+
+      if (!targetUser || targetUser.length === 0) {
+        return res.status(404).json({ 
+          message: "User not found",
+          detail: `No user exists with ID ${targetId}`
+        });
+      }
+
+      // Check for existing match
+      const existingMatch = await db.select()
+        .from(matches)
+        .where(
+          or(
+            and(
+              eq(matches.userId1, currentUser.id),
+              eq(matches.userId2, targetId)
+            ),
+            and(
+              eq(matches.userId1, targetId),
+              eq(matches.userId2, currentUser.id)
+            )
           )
         )
         .limit(1);
 
-      if (!matchWithUsers) {
-        console.log('User not authorized:', { matchId, userId: user.id });
-        return res.status(403).json({ 
-          message: "You don't have access to view this match" 
+      if (existingMatch && existingMatch.length > 0) {
+        return res.status(400).json({ 
+          message: "Match already exists",
+          detail: "A match already exists between these users",
+          matchId: existingMatch[0].id
         });
       }
 
-      if (!matchWithUsers.matchUser) {
-        console.log('Match user not found:', { matchId, matchWithUsers });
-        return res.status(404).json({ 
-          message: "Match user details not found" 
-        });
-      }
+      // Create new match
+      const [newMatch] = await db.insert(matches)
+        .values({
+          userId1: currentUser.id,
+          userId2: targetId,
+          status: 'pending',
+          createdAt: new Date()
+        })
+        .returning();
 
-      console.log('Match found:', { 
-        matchId, 
-        userId: user.id,
-        matchStatus: matchWithUsers.match.status 
-      });
-
-      const { match, matchUser } = matchWithUsers;
-
-      // Verify the match user has completed their profile
-      if (!matchUser.personalityTraits || Object.keys(matchUser.personalityTraits).length === 0) {
-        return res.status(403).json({
-          message: "Match user has not completed their personality profile."
-        });
-      }
-
-      // Calculate compatibility score
-      const userTraits = user.personalityTraits || {};
-      const matchTraits = matchUser.personalityTraits || {};
-      
-      const traitScores = Object.entries(userTraits)
-        .filter(([trait, value]) => 
-          trait in matchTraits && 
-          typeof value === 'number' &&
-          typeof matchTraits[trait] === 'number'
-        )
-        .map(([trait, userValue]) => {
-          const matchValue = matchTraits[trait] as number;
-          return 1 - Math.abs(userValue - matchValue);
-        });
-
-      const compatibilityScore = traitScores.length > 0
-        ? Math.round((traitScores.reduce((a, b) => a + b, 0) / traitScores.length) * 100)
-        : 0;
-
-      return res.json({
-        id: match.id,
-        username: matchUser.username,
-        name: matchUser.name || matchUser.username,
-        personalityTraits: matchTraits,
-        compatibilityScore,
-        status: match.status,
-        avatar: "/default-avatar.png",
-        createdAt: match.createdAt
-      });
+      return res.status(201).json(newMatch);
 
     } catch (error) {
-      console.error('Error fetching match:', error);
-      const errorMessage = error instanceof Error 
-        ? error.message 
-        : 'An unexpected error occurred while fetching match details';
-      
-      res.status(500).json({
-        message: errorMessage,
-        ...(app.get('env') === 'development' ? { error } : {})
+      console.error('Error creating match:', error);
+      return res.status(500).json({ 
+        message: "Server error",
+        detail: "Failed to create match"
       });
     }
   });
@@ -917,7 +948,7 @@ export function registerRoutes(app: Express): Server {
 
       const matchUser = matchWithUser.matchUser;
       const userTraits = user.personalityTraits || {};
-      const matchTraits = matchUser.personalityTraits || {};
+      const matchTraits = matchUser!.personalityTraits || {};
 
     // Generate suggestions based on personality traits
       const completion = await openaiClient.chat.completions.create({

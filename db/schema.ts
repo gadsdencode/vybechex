@@ -1,16 +1,19 @@
 import { pgTable, text, serial, integer, boolean, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+import { z } from "zod";
 
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
   password: text("password").notNull(),
-  name: text("name"),
-  bio: text("bio"),
-  quizCompleted: boolean("quiz_completed").default(false),
-  personalityTraits: jsonb("personality_traits").$type<Record<string, number>>(),
-  createdAt: timestamp("created_at").defaultNow(),
+  name: text("name").default("").notNull(),
+  bio: text("bio").default("").notNull(),
+  quizCompleted: boolean("quiz_completed").default(false).notNull(),
+  personalityTraits: jsonb("personality_traits").$type<Record<string, number>>().default({}).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  isGroupCreator: boolean("is_group_creator").default(false).notNull(),
+  avatar: text("avatar").default("/default-avatar.png").notNull(),
 });
 
 export const matches = pgTable("matches", {
