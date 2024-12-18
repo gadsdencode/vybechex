@@ -3,8 +3,7 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { MessageCircle, UserPlus, Zap, Loader2, User, Heart, Star } from 'lucide-react';
-import { MatchInsightTooltip } from './MatchInsightTooltip';
+import { MessageCircle, UserPlus, Zap, Loader2, User, Heart, Star, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMatches } from '@/hooks/use-matches';
 import { Link, useLocation } from "wouter";
 import { toast } from "@/hooks/use-toast";
@@ -25,6 +24,7 @@ interface MatchCardProps {
 export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   const { connect } = useMatches();
   const [isConnecting, setIsConnecting] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(false);
   const [, setLocation] = useLocation();
 
   // Get the top interests by category
@@ -127,17 +127,18 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
             <h3 className="text-lg font-semibold">{match.name || "Anonymous"}</h3>
             <div className="flex items-center gap-2">
               {getStatusBadge()}
-              <div className="flex items-center gap-1">
+              <Button
+                variant="ghost"
+                size="sm"
+                className="p-0 h-8"
+                onClick={() => setIsExpanded(!isExpanded)}
+              >
                 <Badge variant="secondary" className="flex items-center gap-1">
                   <Zap className="h-3 w-3" />
                   {Math.round(match.compatibilityScore || match.score || 0)}% Match
+                  {isExpanded ? <ChevronUp className="h-3 w-3 ml-1" /> : <ChevronDown className="h-3 w-3 ml-1" />}
                 </Badge>
-                <MatchInsightTooltip
-                  personalityTraits={match.personalityTraits}
-                  compatibilityScore={match.compatibilityScore || match.score || 0}
-                  scoreBreakdown={match.scoreBreakdown}
-                />
-              </div>
+              </Button>
             </div>
           </div>
           <div className="space-y-1 mt-1">
@@ -163,10 +164,33 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
         </div>
       </CardHeader>
       <CardContent className="p-4 pt-0">
-        <div className="flex gap-2">
-          {getActionButton()}
-        </div>
-      </CardContent>
-    </Card>
+        {isExpanded && (
+            <div className="space-y-2 mt-4 p-4 bg-muted/50 rounded-lg">
+              <h4 className="font-medium text-sm">Compatibility Breakdown</h4>
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Personality</span>
+                  <span>{match.scoreBreakdown?.components.personality || 0}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Communication</span>
+                  <span>{match.scoreBreakdown?.components.communication || 0}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Social</span>
+                  <span>{match.scoreBreakdown?.components.social || 0}%</span>
+                </div>
+                <div className="flex justify-between text-sm">
+                  <span className="text-muted-foreground">Activity</span>
+                  <span>{match.scoreBreakdown?.components.activity || 0}%</span>
+                </div>
+              </div>
+            </div>
+          )}
+          <div className="flex gap-2 mt-4">
+            {getActionButton()}
+          </div>
+        </CardContent>
+      </Card>
   );
 };
