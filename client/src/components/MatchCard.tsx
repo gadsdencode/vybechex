@@ -27,11 +27,23 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [, setLocation] = useLocation();
 
-  // Get the top interests by category
-  const interests = match.personalityTraits || [];
-  const topPersonalityTrait = interests.find((i: Interest) => i.category === 'personality');
-  const topHobby = interests.find((i: Interest) => i.category === 'hobby');
-  const topValue = interests.find((i: Interest) => i.category === 'value');
+  // Transform personality traits into interests format
+  const traits = match.personalityTraits || {};
+  const interests: Interest[] = Object.entries(traits).map(([key, score]) => {
+    let category: Interest['category'] = 'personality';
+    if (key === 'values') category = 'value';
+    else if (key === 'sociability') category = 'hobby';
+    
+    return {
+      name: key.charAt(0).toUpperCase() + key.slice(1),
+      score,
+      category
+    };
+  });
+
+  const topPersonalityTrait = interests.find(i => i.category === 'personality' && i.name !== 'Values' && i.name !== 'Sociability');
+  const topHobby = interests.find(i => i.category === 'hobby');
+  const topValue = interests.find(i => i.category === 'value');
 
   const handleConnect = async () => {
     try {
