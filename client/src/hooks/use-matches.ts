@@ -128,11 +128,18 @@ export function useMatches(): UseMatchesReturn {
           return [];
         }
 
+        const authToken = getAuthToken();
+        if (!authToken) {
+          console.log('No auth token found');
+          return [];
+        }
+
         const response = await fetch('/api/matches/requests', {
+          method: 'GET',
           credentials: 'include',
           headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${getAuthToken()}`
+            'Accept': 'application/json',
+            'Authorization': `Bearer ${authToken}`
           }
         });
 

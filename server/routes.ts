@@ -785,30 +785,33 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/matches/requests", requireAuth, async (req, res) => {
     try {
       console.log('Match requests endpoint - Start');
-      const user = req.user as SelectUser;
       
-      // Detailed user validation logging
-      console.log('User object:', {
-        id: user?.id,
-        type: typeof user?.id,
-        authenticated: req.isAuthenticated(),
-        hasUser: !!user
-      });
-
-      // Enhanced user validation
-      if (!user) {
-        console.log('No user object found');
+      // First ensure we have an authenticated user
+      if (!req.isAuthenticated()) {
+        console.log('User not authenticated');
         return sendError(res, 401, "Authentication required");
       }
 
-      if (!user.id) {
-        console.log('User object has no ID');
-        return sendError(res, 401, "Invalid user session");
+      const user = req.user as SelectUser;
+      console.log('Authenticated user:', user);
+
+      // Basic existence check
+      if (!user) {
+        console.log('No user object after auth check');
+        return sendError(res, 401, "No user found in session");
       }
 
-      if (typeof user.id !== 'number' || isNaN(user.id) || user.id <= 0) {
-        console.log('Invalid user ID format:', user.id);
-        return sendError(res, 400, "Invalid user ID format");
+      // Validate user ID strictly
+      const userId = user.id;
+      if (userId === undefined || userId === null) {
+        console.log('User ID is undefined or null');
+        return sendError(res, 401, "Invalid session - no user ID");
+      }
+
+      // Ensure it's a valid positive number
+      if (!Number.isInteger(userId) || userId <= 0) {
+        console.log('Invalid user ID value:', userId);
+        return sendError(res, 400, "Invalid user ID value");
       }
 
       console.log('User validation passed, proceeding with match requests query');
