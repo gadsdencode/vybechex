@@ -676,26 +676,32 @@ export function registerRoutes(app: Express): Server {
   // Get match requests
   app.get("/api/matches/requests", requireAuth, async (req, res) => {
     try {
-      const user = req.user as SelectUser;
+      // Type assertion and validation for user object
+      const user = req.user as SelectUser | undefined;
+      
+      // Comprehensive user validation
       if (!user) {
-        console.error("No user found in session");
-        return sendError(res, 401, "User not found in session");
+        console.error("[Match Requests] No user found in session");
+        return sendError(res, 401, "Authentication required");
       }
 
-      // Ensure user.id exists and is a valid number
-      if (!user.id || typeof user.id === 'undefined') {
-        console.error("User ID missing from session:", user);
-        return sendError(res, 400, "User ID missing from session");
-      }
+      // Validate user ID with detailed logging
+      const userId = user.id;
+      console.log("[Match Requests] Processing request for user:", {
+        id: userId,
+        type: typeof userId,
+        session: !!req.session
+      });
 
-      // Convert to number if string and validate
-      const userId = typeof user.id === 'string' ? parseInt(user.id, 10) : user.id;
-      if (isNaN(userId) || userId <= 0) {
-        console.error("Invalid user ID format:", user.id);
+      if (typeof userId !== 'number' || userId <= 0) {
+        console.error("[Match Requests] Invalid user ID:", {
+          id: userId,
+          type: typeof userId
+        });
         return sendError(res, 400, "Invalid user ID format");
       }
 
-      console.log("Fetching match requests for user:", userId);
+      console.log("[Match Requests] Fetching requests for user:", userId);
       
       // Get pending requests received by the user
       const requests = await db
@@ -725,30 +731,42 @@ export function registerRoutes(app: Express): Server {
 
       console.log("Raw match requests:", requests);
 
-      // Transform the response to match client expectations
-      const formattedRequests = requests.map(request => ({
-        id: request.id,
-        username: request.username || '',
-        name: request.name || request.username || '',
-        personalityTraits: request.personalityTraits || {},
-        avatar: request.avatar || '/default-avatar.png',
-        compatibilityScore: calculateCompatibilityScore(
-          user.personalityTraits || {},
-          request.personalityTraits || {}
-        ),
-        interests: [],
-        status: request.status,
-        score: request.score || 0,
-        createdAt: request.createdAt?.toISOString() || new Date().toISOString(),
-        requester: {
-          id: request.userId1,
+      // Transform the response with proper null checks and type safety
+      const formattedRequests = requests.map(request => {
+        // Ensure we have valid base data
+        if (!request || typeof request.id === 'undefined') {
+          console.error("[Match Requests] Invalid request data:", request);
+          return null;
+        }
+
+        // Calculate compatibility score with proper null checks
+        const compatibilityScore = calculateCompatibilityScore(
+          user?.personalityTraits || {},
+          request?.personalityTraits || {}
+        );
+
+        // Format the request with guaranteed values
+        return {
+          id: request.id,
           username: request.username || '',
           name: request.name || request.username || '',
-          avatar: request.avatar || '/default-avatar.png',
           personalityTraits: request.personalityTraits || {},
-          createdAt: request.createdAt?.toISOString() || new Date().toISOString()
-        }
-      }));
+          avatar: request.avatar || '/default-avatar.png',
+          compatibilityScore,
+          interests: [], // Initialize empty array as required by frontend
+          status: request.status || 'requested',
+          score: request.score || 0,
+          createdAt: request.createdAt?.toISOString() || new Date().toISOString(),
+          requester: {
+            id: request.userId1,
+            username: request.username || '',
+            name: request.name || request.username || '',
+            avatar: request.avatar || '/default-avatar.png',
+            personalityTraits: request.personalityTraits || {},
+            createdAt: request.createdAt?.toISOString() || new Date().toISOString()
+          }
+        };
+      }).filter(Boolean); // Remove any null entries
 
       console.log("Formatted match requests:", formattedRequests);
       return sendSuccess(res, formattedRequests);
