@@ -28,7 +28,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   const [, setLocation] = useLocation();
 
   // Get the top interests by category
-  const interests = match.interests || [];
+  const interests = match.personalityTraits || [];
   const topPersonalityTrait = interests.find((i: Interest) => i.category === 'personality');
   const topHobby = interests.find((i: Interest) => i.category === 'hobby');
   const topValue = interests.find((i: Interest) => i.category === 'value');
@@ -55,7 +55,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
     switch (match.status) {
       case 'requested':
         return <Badge variant="secondary">Request Sent</Badge>;
-      case 'pending':
+      case 'requested':
         return <Badge variant="destructive">Pending</Badge>;
       case 'accepted':
         return <Badge variant="default">Connected</Badge>;
@@ -68,7 +68,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
 
   const getActionButton = () => {
     switch (match.status) {
-      case 'pending':
+      case 'requested':
         return (
           <Button
             className="w-full"
