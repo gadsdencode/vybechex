@@ -10,70 +10,88 @@ if (!process.env.DATABASE_URL?.trim()) {
   );
 }
 
-// Create WebSocket implementation for Neon
+// Configure pool settings for Neon serverless with proper WebSocket setup
 const poolConfig = {
   connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: true
+  },
+  max: 10,
   connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
-  max: 10,
-  // Explicitly configure WebSocket for non-browser environment
-  webSocketConstructor: ws,
-  webSocketClass: ws,
+  webSocket: {
+    constructor: ws,
+    class: ws,
+    keepAlive: true,
+    keepAliveInterval: 30000,
+    keepAliveTimeout: 5000
+  }
 };
 
-// Initialize database connection with retries
-async function createPool(retries = 3) {
+// Initialize pool with singleton pattern
+let poolInstance: Pool | null = null;
+
+// Initialize database connection with retries and exponential backoff
+async function createPool(retries = 3, backoffMs = 1000): Promise<Pool> {
+  if (poolInstance) {
+    return poolInstance;
+  }
+
+  let lastError = null;
+  
   for (let i = 0; i < retries; i++) {
     try {
       const pool = new Pool(poolConfig);
-
-      // Verify connection by making a test query
-      await pool.connect();
+      
+      // Test the connection with a simple query
+      const client = await pool.connect();
+      await client.query('SELECT 1');
+      client.release();
+      
+      console.log(`Successfully connected to database after ${i + 1} attempt(s)`);
       
       // Set up event handlers
       pool.on('error', (err) => {
-        console.error('Unexpected error on idle client:', err);
+        console.error('Unexpected database pool error:', err);
       });
 
-      pool.on('connect', () => {
-        console.log('New client connected to the pool');
+      pool.on('connect', (client) => {
+        console.log('New database connection established');
       });
 
+      pool.on('acquire', (client) => {
+        console.log('Client acquired from pool');
+      });
+
+      poolInstance = pool;
       return pool;
     } catch (error) {
+      lastError = error;
       console.error(`Database connection attempt ${i + 1} failed:`, error);
-      if (i === retries - 1) throw error;
-      await new Promise(resolve => setTimeout(resolve, 1000 * (i + 1))); // Exponential backoff
+      
+      if (i < retries - 1) {
+        const delay = backoffMs * Math.pow(2, i);
+        console.log(`Retrying in ${delay}ms...`);
+        await new Promise(resolve => setTimeout(resolve, delay));
+      }
     }
   }
-  throw new Error(`Failed to connect after ${retries} attempts`);
+
+  throw new Error(`Failed to connect to database after ${retries} attempts. Last error: ${lastError}`);
 }
 
-// Initialize pool and Drizzle instance
-const pool = await createPool();
+// Create a synchronous pool instance for initial connection
+const pool = new Pool(poolConfig);
+
+// Export the database instance
 export const db = drizzle(pool, { schema });
 
-// Enhanced health check with comprehensive diagnostics
+// Health check function with comprehensive diagnostics
 export async function checkDatabaseHealth() {
   let client;
   try {
-    // Test pool status
-    if (!pool) {
-      return {
-        ok: false,
-        error: 'Database pool not initialized',
-        diagnostics: {
-          poolExists: false,
-          connectionString: !!process.env.DATABASE_URL,
-          timestamp: new Date().toISOString()
-        }
-      };
-    }
-
-    // Attempt to get a client from the pool
     client = await pool.connect();
     
-    // Run comprehensive health check query
     const result = await client.query(`
       SELECT 
         current_timestamp as now,
@@ -96,8 +114,8 @@ export async function checkDatabaseHealth() {
         serverStartTime: row.start_time,
         activeConnections: row.active_connections,
         poolStatus: {
-          totalConnections: pool.totalCount,
-          idleConnections: pool.idleCount,
+          totalCount: pool.totalCount,
+          idleCount: pool.idleCount,
           waitingCount: pool.waitingCount
         }
       }
@@ -117,35 +135,24 @@ export async function checkDatabaseHealth() {
     };
   } finally {
     if (client) {
-      try {
-        await client.release();
-      } catch (releaseError) {
-        console.error('Error releasing client:', releaseError);
-      }
+      client.release();
     }
   }
 }
 
-// Graceful shutdown function
+// Graceful shutdown handler
 export async function closeDatabaseConnection() {
   try {
-    await pool.end();
-    console.log('Database pool has been closed');
+    if (poolInstance) {
+      await poolInstance.end();
+      poolInstance = null;
+      console.log('Database pool has been closed');
+    }
   } catch (error) {
     console.error('Error closing database pool:', error);
     throw error;
   }
 }
 
-// Perform initial health check
-await checkDatabaseHealth().then(status => {
-  if (!status.ok) {
-    console.error('Initial database health check failed:', status);
-    process.exit(1);
-  }
-  console.log('Database initialized successfully:', {
-    database: status.database,
-    poolSize: status.poolSize,
-    timestamp: status.timestamp
-  });
-});
+// Export the initialization function for explicit initialization when needed
+export const initializeDatabase = createPool;

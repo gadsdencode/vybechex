@@ -34,6 +34,14 @@ export interface ExtendedUser {
 
 export interface Match {
   id: number;
+  username: string;
+  name?: string;
+  personalityTraits: Record<string, number>;
+  avatar?: string;
+  createdAt: string;
+  status: 'requested' | 'accepted' | 'rejected';
+  score?: number;
+  compatibilityScore?: number;
   requester?: {
     id: number;
     username: string;
@@ -42,10 +50,6 @@ export interface Match {
     personalityTraits: Record<string, number>;
     createdAt: string;
   };
-  status: 'requested' | 'accepted' | 'rejected';
-  createdAt: string;
-  score?: number;
-  compatibilityScore?: number;
 }
 
 interface Message {

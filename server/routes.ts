@@ -365,103 +365,122 @@ export function registerRoutes(app: Express): Server {
         return sendError(res, 400, "Cannot create a match with yourself.");
       }
 
-      // Verify target user exists
-      const [targetUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, targetId))
-        .limit(1);
+      // Use a transaction to prevent race conditions
+      return await db.transaction(async (tx) => {
+        // Verify target user exists with personality traits
+        const [targetUser] = await tx
+          .select()
+          .from(users)
+          .where(eq(users.id, targetId))
+          .limit(1);
 
-      if (!targetUser) {
-        return sendError(res, 404, "User not found", 
-          `No user exists with ID ${targetId}`);
-      }
+        if (!targetUser) {
+          return sendError(res, 404, "User not found", 
+            `No user exists with ID ${targetId}`);
+        }
 
-      // Check if match already exists with detailed status handling
-      const [existingMatch] = await db
-        .select()
-        .from(matches)
-        .where(
-          or(
-            and(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, targetId)
-            ),
-            and(
-              eq(matches.userId1, targetId),
-              eq(matches.userId2, user.id)
+        // Check if match already exists with detailed status handling
+        const [existingMatch] = await tx
+          .select()
+          .from(matches)
+          .where(
+            or(
+              and(
+                eq(matches.userId1, user.id),
+                eq(matches.userId2, targetId)
+              ),
+              and(
+                eq(matches.userId1, targetId),
+                eq(matches.userId2, user.id)
+              )
             )
           )
-        )
-        .limit(1);
+          .limit(1);
 
-      if (existingMatch) {
-        // Enhanced status handling with appropriate responses
-        switch (existingMatch.status) {
-          case 'requested':
-            // Auto-accept if current user is the request recipient
-            if (existingMatch.userId2 === user.id) {
-              const [updatedMatch] = await db
-                .update(matches)
-                .set({ 
-                  status: 'accepted',
-                  score: calculateCompatibilityScore(
-                    user.personalityTraits,
-                    targetUser.personalityTraits
-                  )
-                })
-                .where(eq(matches.id, existingMatch.id))
-                .returning();
+        if (existingMatch) {
+          // Enhanced status handling with appropriate responses
+          switch (existingMatch.status) {
+            case 'requested':
+              // Auto-accept if current user is the request recipient
+              if (existingMatch.userId2 === user.id) {
+                const [updatedMatch] = await tx
+                  .update(matches)
+                  .set({ 
+                    status: 'accepted',
+                    score: calculateCompatibilityScore(
+                      user.personalityTraits,
+                      targetUser.personalityTraits
+                    ),
+                    updatedAt: new Date()
+                  })
+                  .where(eq(matches.id, existingMatch.id))
+                  .returning();
+                
+                return sendSuccess(res, updatedMatch, 
+                  "Match request accepted! You can now start chatting.");
+              }
+              return sendSuccess(res, existingMatch,
+                "Your match request is still pending.");
               
-              return sendSuccess(res, updatedMatch, 
-                "Match request accepted! You can now start chatting.");
-            }
-            return sendSuccess(res, existingMatch,
-              "Your match request is still pending.");
-            
-          case 'accepted':
-            return sendSuccess(res, existingMatch,
-              "You're already matched with this user!");
-            
-          case 'rejected':
-            return sendError(res, 409, 
-              "Cannot create match",
-              "This user has previously declined your match request.");
-            
-          default:
-            return sendSuccess(res, existingMatch);
+            case 'accepted':
+              return sendSuccess(res, existingMatch,
+                "You're already matched with this user!");
+              
+            case 'rejected':
+              return sendError(res, 409, 
+                "Cannot create match",
+                "This user has previously declined your match request.");
+              
+            default:
+              return sendSuccess(res, existingMatch);
+          }
         }
-      }
 
-      // Calculate initial compatibility score
-      const compatibilityScore = calculateCompatibilityScore(
-        user.personalityTraits,
-        targetUser.personalityTraits
-      );
+        // Verify user has completed personality quiz
+        if (!user.personalityTraits || !targetUser.personalityTraits) {
+          return sendError(res, 400, 
+            "Cannot create match",
+            "Both users must complete the personality quiz before matching.");
+        }
 
-      // Create new match request with compatibility score
-      const [newMatch] = await db
-        .insert(matches)
-        .values({
-          userId1: user.id,
-          userId2: targetId,
-          status: 'requested',
-          score: compatibilityScore,
-          createdAt: new Date()
-        })
-        .returning();
+        // Calculate initial compatibility score
+        const compatibilityScore = calculateCompatibilityScore(
+          user.personalityTraits,
+          targetUser.personalityTraits
+        );
 
-      return sendSuccess(res, newMatch,
-        "Match request sent successfully! We'll notify you when they respond.");
+        // Create new match request with compatibility score
+        const [newMatch] = await tx
+          .insert(matches)
+          .values({
+            userId1: user.id,
+            userId2: targetId,
+            status: 'requested',
+            score: compatibilityScore,
+            createdAt: new Date(),
+            updatedAt: new Date()
+          })
+          .returning();
 
+        return sendSuccess(res, newMatch,
+          "Match request sent successfully! We'll notify you when they respond.");
+      });
     } catch (error) {
       console.error("Error in match connection:", error);
       const isDbError = error instanceof Error && 
         error.message.includes('violates foreign key constraint');
       
+      if (isDbError) {
+        return sendError(res, 409,
+          "Database constraint violation",
+          "The match request could not be processed due to data integrity constraints.",
+          user?.id
+        );
+      }
+
       return sendError(res, 500,
-        isDbError ? "Database constraint violation" : "Failed to process match request",
-        error instanceof Error ? error.message : "Unknown error occurred",
+        "Failed to process match request",
+        error instanceof Error ? error.message : "An unexpected error occurred",
         user?.id
       );
     }
@@ -617,112 +636,140 @@ export function registerRoutes(app: Express): Server {
       const { status } = req.body;
       
       if (!status || !['accepted', 'rejected'].includes(status)) {
-        return sendError(res, 400, "Invalid status");
+        return sendError(res, 400, "Invalid status. Must be either 'accepted' or 'rejected'.");
       }
 
       const matchId = parseInt(req.params.matchId);
-      
-      // Create aliases for the users table
-      const requesterAlias = users;
-      const receiverAlias = users;
-      
-      // Get the current match with both users' information
-      const matchWithUsers = await db
-        .select({
-          match: matches,
-          requester: {
-            id: requesterAlias.id,
-            username: requesterAlias.username,
-            name: requesterAlias.name,
-            avatar: requesterAlias.avatar,
-            personalityTraits: requesterAlias.personalityTraits
-          },
-          receiver: {
-            id: receiverAlias.id,
-            username: receiverAlias.username,
-            name: receiverAlias.name,
-            avatar: receiverAlias.avatar,
-            personalityTraits: receiverAlias.personalityTraits
+      if (isNaN(matchId) || matchId <= 0) {
+        return sendError(res, 400, "Invalid match ID format. Please provide a valid positive number.");
+      }
+
+      // Use transaction for consistency
+      return await db.transaction(async (tx) => {
+        // Get the current match with both users' information using table aliases
+        const requesterAlias = users;
+        const receiverAlias = users;
+        
+        const matchWithUsers = await tx
+          .select({
+            match: matches,
+            requester: {
+              id: requesterAlias.id,
+              username: requesterAlias.username,
+              name: requesterAlias.name,
+              avatar: requesterAlias.avatar,
+              personalityTraits: requesterAlias.personalityTraits,
+              quizCompleted: requesterAlias.quizCompleted
+            },
+            receiver: {
+              id: receiverAlias.id,
+              username: receiverAlias.username,
+              name: receiverAlias.name,
+              avatar: receiverAlias.avatar,
+              personalityTraits: receiverAlias.personalityTraits,
+              quizCompleted: receiverAlias.quizCompleted
+            }
+          })
+          .from(matches)
+          .leftJoin(requesterAlias, eq(matches.userId1, requesterAlias.id))
+          .leftJoin(receiverAlias, eq(matches.userId2, receiverAlias.id))
+          .where(eq(matches.id, matchId))
+          .limit(1);
+
+        const currentMatch = matchWithUsers[0];
+
+        if (!currentMatch?.match) {
+          return sendError(res, 404, "Match request not found");
+        }
+
+        // Verify the user is the receiver of the request
+        if (currentMatch.match.userId2 !== user.id) {
+          return sendError(res, 403, "Only the match recipient can accept or reject the request");
+        }
+
+        // Only allow accepting/rejecting requested matches
+        if (currentMatch.match.status !== 'requested') {
+          return sendError(res, 400, 
+            "Invalid match status",
+            `Can only accept/reject pending match requests. Current status: ${currentMatch.match.status}`
+          );
+        }
+
+        // Verify both users have completed the personality quiz if accepting
+        if (status === 'accepted') {
+          if (!currentMatch.requester?.quizCompleted || !currentMatch.receiver?.quizCompleted) {
+            return sendError(res, 400, 
+              "Cannot accept match",
+              "Both users must complete the personality quiz before accepting a match."
+            );
           }
-        })
-        .from(matches)
-        .leftJoin(requesterAlias, eq(matches.userId1, requesterAlias.id))
-        .leftJoin(receiverAlias, eq(matches.userId2, receiverAlias.id))
-        .where(eq(matches.id, matchId))
-        .limit(1);
+        }
 
-      const currentMatch = matchWithUsers[0];
+        // Calculate compatibility score if accepting the match
+        let compatibilityScore = 0;
+        if (status === 'accepted' && currentMatch.requester && currentMatch.receiver) {
+          compatibilityScore = calculateCompatibilityScore(
+            currentMatch.requester.personalityTraits,
+            currentMatch.receiver.personalityTraits
+          );
+        }
 
-      if (!currentMatch?.match) {
-        return sendError(res, 404, "Match not found");
-      }
+        // Update match status
+        const [updatedMatch] = await tx
+          .update(matches)
+          .set({ 
+            status,
+            score: status === 'accepted' ? compatibilityScore : null,
+            updatedAt: new Date()
+          })
+          .where(eq(matches.id, matchId))
+          .returning();
 
-      // Verify the user is the receiver of the request
-      if (currentMatch.match.userId2 !== user.id) {
-        return sendError(res, 403, "Only the match recipient can accept or reject the request");
-      }
+        // Format user details for response
+        const requester = currentMatch.requester ? {
+          id: currentMatch.requester.id,
+          username: currentMatch.requester.username,
+          name: currentMatch.requester.name || currentMatch.requester.username,
+          avatar: currentMatch.requester.avatar || "/default-avatar.png",
+          personalityTraits: currentMatch.requester.personalityTraits || {}
+        } : null;
 
-      // Only allow accepting/rejecting requested matches
-      if (currentMatch.match.status !== 'requested') {
-        return sendError(res, 400, "Can only accept/reject pending match requests", 
-          `Current status: ${currentMatch.match.status}`);
-      }
+        const receiver = currentMatch.receiver ? {
+          id: currentMatch.receiver.id,
+          username: currentMatch.receiver.username,
+          name: currentMatch.receiver.name || currentMatch.receiver.username,
+          avatar: currentMatch.receiver.avatar || "/default-avatar.png",
+          personalityTraits: currentMatch.receiver.personalityTraits || {}
+        } : null;
 
-      // Calculate compatibility score if accepting the match
-      let compatibilityScore = 0;
-      if (status === 'accepted' && currentMatch.requester && currentMatch.receiver) {
-        compatibilityScore = calculateCompatibilityScore(
-          currentMatch.requester.personalityTraits,
-          currentMatch.receiver.personalityTraits
+        if (!requester || !receiver) {
+          return sendError(res, 500, "Failed to load complete user details for match");
+        }
+
+        // Prepare detailed response
+        const response = {
+          ...updatedMatch,
+          requester,
+          receiver,
+          compatibilityScore: status === 'accepted' ? compatibilityScore : null
+        };
+
+        return sendSuccess(res, response, 
+          status === 'accepted' 
+            ? "Match request accepted! You can now start chatting."
+            : "Match request rejected. The user will be notified."
         );
-      }
-
-      const [updatedMatch] = await db
-        .update(matches)
-        .set({ 
-          status,
-          ...(status === 'accepted' ? { score: compatibilityScore } : {})
-        })
-        .where(eq(matches.id, matchId))
-        .returning();
-
-      // Ensure requester exists before accessing properties
-      const requester = currentMatch.requester ? {
-        id: currentMatch.requester.id,
-        username: currentMatch.requester.username,
-        name: currentMatch.requester.name,
-        avatar: currentMatch.requester.avatar || "/default-avatar.png",
-        personalityTraits: currentMatch.requester.personalityTraits || {}
-      } : null;
-
-      // Ensure receiver exists before accessing properties
-      const receiver = currentMatch.receiver ? {
-        id: currentMatch.receiver.id,
-        username: currentMatch.receiver.username,
-        name: currentMatch.receiver.name,
-        avatar: currentMatch.receiver.avatar || "/default-avatar.png",
-        personalityTraits: currentMatch.receiver.personalityTraits || {}
-      } : null;
-
-      if (!requester || !receiver) {
-        return sendError(res, 500, "Failed to load user details for match");
-      }
-
-      // Prepare response with user details
-      const response = {
-        ...updatedMatch,
-        requester,
-        receiver
-      };
-
-      return sendSuccess(res, response, 
-        status === 'accepted' 
-          ? "Match request accepted! You can now start chatting."
-          : "Match request rejected."
-      );
+      });
     } catch (error) {
       console.error("Error updating match:", error);
-      return sendError(res, 500, "Failed to update match", error);
+      const isDbError = error instanceof Error && 
+        error.message.includes('violates foreign key constraint');
+
+      return sendError(res, 
+        isDbError ? 409 : 500,
+        isDbError ? "Database constraint violation" : "Failed to update match",
+        error instanceof Error ? error.message : "An unexpected error occurred"
+      );
     }
   });
 

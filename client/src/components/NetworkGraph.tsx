@@ -3,6 +3,7 @@ import ForceGraph2D from "react-force-graph-2d";
 import type { ForceGraphMethods } from "react-force-graph-2d";
 import type { Match } from "../hooks/use-matches";
 import type { SelectUser } from "@db/schema";
+import { AlertCircle } from "lucide-react";
 
 // Define custom LinkObject interface
 interface CustomNodeObject {
