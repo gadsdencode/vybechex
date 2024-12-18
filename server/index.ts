@@ -1,8 +1,7 @@
 import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
-import { db } from "@db";
-import { sql } from "drizzle-orm";
+import { db, sql, testConnection } from "@db";
 import { setupAuth } from "./auth";
 
 const app = express();
@@ -74,39 +73,38 @@ async function startServer() {
       log('Database connection successful');
 
       // Create tables in correct order (respecting foreign keys)
-      await sql`
-        CREATE TABLE IF NOT EXISTS users (
-          id SERIAL PRIMARY KEY,
-          username TEXT UNIQUE NOT NULL,
-          password TEXT NOT NULL,
-          name TEXT DEFAULT '' NOT NULL,
-          bio TEXT DEFAULT '' NOT NULL,
-          quiz_completed BOOLEAN DEFAULT false NOT NULL,
-          personality_traits JSONB DEFAULT '{}' NOT NULL,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
-          is_group_creator BOOLEAN DEFAULT false NOT NULL,
-          avatar TEXT DEFAULT '/default-avatar.png' NOT NULL
-        );
+      // Create tables in sequence to respect dependencies
+      await sql`CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        username TEXT UNIQUE NOT NULL,
+        password TEXT NOT NULL,
+        name TEXT DEFAULT '' NOT NULL,
+        bio TEXT DEFAULT '' NOT NULL,
+        quiz_completed BOOLEAN DEFAULT false NOT NULL,
+        personality_traits JSONB DEFAULT '{}' NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP NOT NULL,
+        is_group_creator BOOLEAN DEFAULT false NOT NULL,
+        avatar TEXT DEFAULT '/default-avatar.png' NOT NULL
+      )`;
 
-        CREATE TABLE IF NOT EXISTS matches (
-          id SERIAL PRIMARY KEY,
-          user_id_1 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          user_id_2 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          score INTEGER,
-          status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('requested', 'pending', 'accepted', 'rejected')),
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-        );
+      await sql`CREATE TABLE IF NOT EXISTS matches (
+        id SERIAL PRIMARY KEY,
+        user_id_1 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        user_id_2 INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        score INTEGER,
+        status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('requested', 'pending', 'accepted', 'rejected')),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+      )`;
 
-        CREATE TABLE IF NOT EXISTS messages (
-          id SERIAL PRIMARY KEY,
-          match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
-          sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-          content TEXT NOT NULL,
-          created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-          analyzed BOOLEAN DEFAULT false,
-          sentiment JSONB
-        );
-      `;
+      await sql`CREATE TABLE IF NOT EXISTS messages (
+        id SERIAL PRIMARY KEY,
+        match_id INTEGER NOT NULL REFERENCES matches(id) ON DELETE CASCADE,
+        sender_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        content TEXT NOT NULL,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        analyzed BOOLEAN DEFAULT false,
+        sentiment JSONB
+      )`;
 
       log('Database schema initialized successfully');
     } catch (dbError) {

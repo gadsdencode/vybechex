@@ -1,24 +1,21 @@
 import { drizzle } from "drizzle-orm/neon-http";
-import { neon, neonConfig } from '@neondatabase/serverless';
-import ws from 'ws';
+import { neon } from '@neondatabase/serverless';
 import * as schema from "@db/schema";
 
-// Verify required environment variables
 if (!process.env.DATABASE_URL) {
-  throw new Error("DATABASE_URL must be set. Database connection requires proper configuration.");
+  throw new Error(
+    "DATABASE_URL must be set. Did you forget to provision a database?",
+  );
 }
 
-// Configure neon for WebSocket support
-neonConfig.webSocketConstructor = ws;
-
-// Create the SQL connection
+// Create the SQL client
 const sql = neon(process.env.DATABASE_URL);
 
-// Create the database instance with HTTP handler
-export const db = drizzle(sql, { schema });
+// Initialize Drizzle with the Neon client
+export const db = drizzle(sql);
 
-// Simple connection test function with proper error handling
-export async function testConnection() {
+// Test connection function
+async function testConnection() {
   try {
     const result = await sql`SELECT NOW()`;
     if (!result?.[0]) {
@@ -29,7 +26,10 @@ export async function testConnection() {
     console.error('Database connection test failed:', error);
     return { 
       ok: false, 
-      error: error instanceof Error ? error : new Error('Unknown database error') 
+      error: error instanceof Error ? error : new Error('Unknown database error')
     };
   }
 }
+
+// Export SQL client and test function
+export { sql, testConnection };
