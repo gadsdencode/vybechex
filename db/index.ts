@@ -1,7 +1,8 @@
-import { drizzle } from "drizzle-orm/neon-serverless";
-import { Pool } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/node-postgres";
+import pg from "pg";
 import * as schema from "@db/schema";
-import ws from "ws";
+
+const { Pool } = pg;
 
 // Validate environment variables early
 if (!process.env.DATABASE_URL?.trim()) {
@@ -10,22 +11,12 @@ if (!process.env.DATABASE_URL?.trim()) {
   );
 }
 
-// Configure pool settings for Neon serverless with proper WebSocket setup
+// Configure pool settings
 const poolConfig = {
   connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: true
-  },
   max: 10,
-  connectionTimeoutMillis: 5000,
   idleTimeoutMillis: 30000,
-  webSocket: {
-    constructor: ws,
-    class: ws,
-    keepAlive: true,
-    keepAliveInterval: 30000,
-    keepAliveTimeout: 5000
-  }
+  connectionTimeoutMillis: 5000,
 };
 
 // Initialize pool with singleton pattern
@@ -55,14 +46,6 @@ async function createPool(retries = 3, backoffMs = 1000): Promise<Pool> {
         console.error('Unexpected database pool error:', err);
       });
 
-      pool.on('connect', (client) => {
-        console.log('New database connection established');
-      });
-
-      pool.on('acquire', (client) => {
-        console.log('Client acquired from pool');
-      });
-
       poolInstance = pool;
       return pool;
     } catch (error) {
@@ -80,13 +63,13 @@ async function createPool(retries = 3, backoffMs = 1000): Promise<Pool> {
   throw new Error(`Failed to connect to database after ${retries} attempts. Last error: ${lastError}`);
 }
 
-// Create a synchronous pool instance for initial connection
+// Create and initialize the pool
 const pool = new Pool(poolConfig);
 
 // Export the database instance
 export const db = drizzle(pool, { schema });
 
-// Health check function with comprehensive diagnostics
+// Health check function
 export async function checkDatabaseHealth() {
   let client;
   try {
@@ -96,10 +79,7 @@ export async function checkDatabaseHealth() {
       SELECT 
         current_timestamp as now,
         current_database() as database,
-        version() as version,
-        pg_is_in_recovery() as is_replica,
-        pg_postmaster_start_time() as start_time,
-        (SELECT count(*) FROM pg_stat_activity) as active_connections
+        version() as version
     `);
 
     const row = result.rows[0];
@@ -108,30 +88,14 @@ export async function checkDatabaseHealth() {
       ok: true,
       timestamp: row.now,
       database: row.database,
-      version: row.version,
-      diagnostics: {
-        isReplica: row.is_replica,
-        serverStartTime: row.start_time,
-        activeConnections: row.active_connections,
-        poolStatus: {
-          totalCount: pool.totalCount,
-          idleCount: pool.idleCount,
-          waitingCount: pool.waitingCount
-        }
-      }
+      version: row.version
     };
   } catch (error) {
     console.error('Database health check failed:', error);
     return {
       ok: false,
       error: error instanceof Error ? error.message : 'Unknown database error',
-      diagnostics: {
-        poolExists: !!pool,
-        connectionString: !!process.env.DATABASE_URL,
-        errorType: error?.constructor?.name,
-        errorStack: error instanceof Error ? error.stack : undefined,
-        timestamp: new Date().toISOString()
-      }
+      timestamp: new Date().toISOString()
     };
   } finally {
     if (client) {
