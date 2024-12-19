@@ -9,6 +9,7 @@ import Chat from "./pages/Chat";
 import { InterestsPage } from "./pages/InterestsPage";
 import Navigation from "./components/Navigation";
 import AuthPage from "./pages/AuthPage";
+import Profile from "./pages/Profile";
 
 function App() {
   const { user, isLoading } = useUser();
@@ -36,6 +37,7 @@ function App() {
           <Route path="/matches/create" component={CreateMatch} />
           <Route path="/chat/:id" component={Chat} />
           <Route path="/interests" component={InterestsPage} />
+          <Route path="/profile" component={Profile} />
           <Route path="/matches/create/:id">
             {(params) => {
               window.location.href = `/chat/${params.id}`;
