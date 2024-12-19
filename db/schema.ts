@@ -110,7 +110,6 @@ export const matches = pgTable("matches", {
     .notNull()
     .default("requested"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  updatedAt: timestamp("updated_at").defaultNow().notNull(),
   // Add verification fields
   verifiedAt: timestamp("verified_at"),
   verificationCode: text("verification_code"),

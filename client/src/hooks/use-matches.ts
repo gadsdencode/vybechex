@@ -375,8 +375,7 @@ export function useMatches(): UseMatchesReturn {
         },
         credentials: 'include',
         body: JSON.stringify({ 
-          targetUserId: parseInt(id),
-          userId: userId
+          userId2: parseInt(id)
         })
       });
 
@@ -408,10 +407,15 @@ export function useMatches(): UseMatchesReturn {
       }
 
       // Handle the success response
-      const match = data.data?.match || data.match;
+      if (!data.success && !data.match) {
+        console.error('Invalid server response:', data);
+        throw new Error('Invalid server response format');
+      }
+
+      const match = data.match || data.data?.match;
       if (!match) {
-        console.error('Invalid response format:', data);
-        throw new Error('Invalid response format from server');
+        console.error('Missing match data in response:', data);
+        throw new Error('Invalid match data in response');
       }
 
       // Always invalidate queries to refresh the UI
