@@ -111,7 +111,6 @@ export const matches = pgTable("matches", {
     .default("requested"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
-  // Match metadata
   verifiedAt: timestamp("verified_at"),
   verificationCode: text("verification_code"),
   matchType: text("match_type", { enum: ['request', 'direct'] }).default('request').notNull(),

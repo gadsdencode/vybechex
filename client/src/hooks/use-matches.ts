@@ -360,9 +360,17 @@ export function useMatches(): UseMatchesReturn {
         throw new Error('User ID is required');
       }
 
-      // Get auth token first to fail fast if not authenticated
+      // Get current user ID first to ensure we're authenticated
+      const currentUserId = getUserId();
+      if (!currentUserId) {
+        throw new Error('Authentication required');
+      }
+
+      // Get auth token and validate it
       const authToken = getAuthToken();
       if (!authToken) {
+        // Force refresh auth state
+        queryClient.invalidateQueries({ queryKey: ['user'] });
         console.error('No auth token found when attempting to connect');
         throw new Error('Authentication required');
       }
@@ -391,13 +399,16 @@ export function useMatches(): UseMatchesReturn {
           }
 
           // Prepare request payload with proper typing
+          // Prepare match request payload with all required fields
           const matchData = {
             userId1: currentUserId,
             userId2: parsedId,
             matchType: 'request' as const,
             status: 'requested' as const,
-            score: 0,
-            lastActivityAt: new Date().toISOString()
+            score: 0, // Initial compatibility score
+            lastActivityAt: new Date().toISOString(),
+            verificationCode: null, // Optional verification code
+            verifiedAt: null // Optional verification timestamp
           };
 
           console.log('Sending match request with data:', matchData);
@@ -410,7 +421,11 @@ export function useMatches(): UseMatchesReturn {
               'Authorization': `Bearer ${authToken}`
             },
             credentials: 'include',
-            body: JSON.stringify(matchData)
+            body: JSON.stringify({
+              ...matchData,
+              created_at: new Date().toISOString(), // Ensure proper date format
+              last_activity_at: new Date().toISOString()
+            })
           });
 
           let responseData;

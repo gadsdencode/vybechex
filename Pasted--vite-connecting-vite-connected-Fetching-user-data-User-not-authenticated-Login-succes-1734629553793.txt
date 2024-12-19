@@ -1,0 +1,45 @@
+[vite] connecting...
+[vite] connected.
+Fetching user data...
+User not authenticated
+Login successful: 
+Object {success: true, message: "Login successful", user: {…}, ok: true}
+Fetching user data...
+User data fetched: 
+Object {id: 1, username: "jmartens10@gmail.com", password: "f97f581dcb23d3cd9b98c1f24b2ed95fe4cad17a5e982f3fa234bb184e857e90d0222f28c9d34fd41ceae7471c8ca9f1a26…", name: "Gadsdencode", bio: "dev", …}
+avatar: "/default-avatar.png"
+bio: "dev"
+createdAt: "2024-12-16T00:19:54.704Z"
+id: 1
+isGroupCreator: true
+lastRewardClaimed: null
+level: 1
+name: "Gadsdencode"
+password: "f97f581dcb23d3cd9b98c1f24b2ed95fe4cad17a5e982f3fa234bb184e857e90d0222f28c9d34fd41ceae7471c8ca9f1a26f432200c1b55b3c044b6cc8d11b64.28f0dffd3234bd76bec9172ef8e6181c"
+personalityTraits: Object
+quizCompleted: true
+username: "jmartens10@gmail.com"
+xp: 0
+[[Prototype]]: Object
+No auth token found
+Matches response: 
+(4) [{…}, {…}, {…}, {…}]
+No auth token found when attempting to connect
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400
+Match initiation error: 
+Object {error: Error, id: "2", timestamp: "2024-12-19T17:31:59.430Z"}
+error: Error
+id: "2"
+timestamp: "2024-12-19T17:31:59.430Z"
+[[Prototype]]: Object
+
+Connect error: 
+Error {}
+message: "Authentication required"
+stack: "Error: Authentication required↵ at connect (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-matches.ts:231:15)↵ at handleConnect (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/components/MatchCard.tsx:68:30)↵ at HTMLUnknownElement.callCallback2 (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:3674:22)↵ at Object.invokeGuardedCallbackDev (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:3699:24)↵ at invokeGuardedCallback (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:3733:39)↵ at invokeGuardedCallbackAndCatchFirstError (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:3736:33)↵ at executeDispatch (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:7014:11)↵ at processDispatchQueueItemsInOrder (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:7034:15)↵ at processDispatchQueue (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:7043:13)↵ at dispatchEventsForPlugins (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/@fs/home/runner/workspace/node_modules/.vite/deps/chunk-RPCDYKBN.js?v=2128ad29:7051:11)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
