@@ -46,11 +46,20 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   const topValue = interests.find(i => i.category === 'value');
 
   const handleConnect = async () => {
+    if (!match.id) {
+      toast({
+        title: "Connection Failed",
+        description: "Invalid match data",
+        variant: "destructive"
+      });
+      return;
+    }
+
     try {
       setIsConnecting(true);
       const response = await connect({ id: match.id.toString() });
       
-      // Check the match status and handle accordingly
+      // Handle different match statuses with appropriate feedback
       switch (response.status) {
         case 'accepted':
           toast({
@@ -80,21 +89,36 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
           break;
         
         default:
-          // Handle any other status
+          console.warn('Unexpected match status:', response.status);
           toast({
             title: "Status Updated",
-            description: `Match status: ${response.status}`,
+            description: "Match status has been updated",
             variant: "default"
           });
           setLocation('/matches');
       }
     } catch (error) {
       console.error('Connect error:', error);
+      
+      // Enhanced error handling with specific messages
+      const errorMessage = error instanceof Error ? error.message : "Failed to connect with match";
+      
       toast({
         title: "Connection Failed",
-        description: error instanceof Error ? error.message : "Failed to connect with match",
+        description: errorMessage,
         variant: "destructive",
+        duration: 5000
       });
+
+      // Handle specific error cases
+      if (error instanceof Error) {
+        if (error.message.includes('Authentication required') || 
+            error.message.includes('Not authorized')) {
+          setLocation('/login');
+        } else if (error.message.includes('Match request already exists')) {
+          setLocation('/matches');
+        }
+      }
     } finally {
       setIsConnecting(false);
     }

@@ -359,20 +359,16 @@ export function useMatches(): UseMatchesReturn {
         throw new Error('Invalid user ID provided');
       }
 
-      const authToken = getAuthToken();
-      if (!authToken) {
-        throw new Error('Authentication required');
-      }
-
       const response = await fetch('/api/matches', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${authToken}`
+          'Accept': 'application/json'
         },
         credentials: 'include',
-        body: JSON.stringify({ userId2: parseInt(id) })
+        body: JSON.stringify({ 
+          targetUserId: parseInt(id)
+        })
       });
 
       let data;
@@ -380,47 +376,57 @@ export function useMatches(): UseMatchesReturn {
         data = await response.json();
       } catch (parseError) {
         console.error('Error parsing response:', parseError);
-        throw new Error('Invalid response from server');
+        throw new Error('Server response was not in the expected format');
       }
 
       if (!response.ok) {
-        const errorMessage = data?.message || 'Failed to connect';
-        console.error('Server error:', data);
+        const errorMessage = data?.message || 'Failed to process match request';
+        console.error('Match connection error:', {
+          status: response.status,
+          data,
+          errorMessage
+        });
+
+        if (response.status === 401) {
+          throw new Error('Authentication required');
+        }
+        
         throw new Error(errorMessage);
       }
 
-      // Success handling
-      if (!data.success || !data.data?.match) {
+      // Handle the success response
+      const match = data.data?.match || data.match;
+      if (!match) {
         console.error('Invalid response format:', data);
         throw new Error('Invalid response format from server');
       }
 
-      const { match, type } = data.data;
-
-      // Invalidate queries to refresh the UI
+      // Always invalidate queries to refresh the UI
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['match-requests'] });
+
+      let type = data.data?.type || 'created';
+      if (match.status === 'accepted') {
+        type = 'accepted';
+      } else if (match.status === 'requested' || match.status === 'pending') {
+        type = 'pending';
+      }
 
       // Show appropriate status messages
       const toastMessages = {
         created: {
-          title: "Match Request Sent ✨",
+          title: "Match Request Sent",
           description: "We'll notify you when they respond!",
           variant: "default" as const
         },
-        updated: {
-          title: "Match Accepted! 🎉",
-          description: "You can now start chatting!",
+        accepted: {
+          title: "Match Connected!",
+          description: "You can now start chatting",
           variant: "default" as const
         },
         pending: {
-          title: "Request Pending ⏳",
-          description: "Your request is still waiting for a response.",
-          variant: "default" as const
-        },
-        existing: {
-          title: "Already Connected",
-          description: "You're already connected with this user.",
+          title: "Request Pending",
+          description: "Your request is waiting for a response",
           variant: "default" as const
         }
       };
