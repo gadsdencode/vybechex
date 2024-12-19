@@ -930,6 +930,47 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Update user profile
+  app.post("/api/user/profile", requireAuth, async (req, res) => {
+    try {
+      const user = req.user as SelectUser;
+      if (!user?.id) {
+        return sendError(res, 401, "Authentication required");
+      }
+
+      const profileSchema = z.object({
+        name: z.string().min(2).max(50).nullable(),
+        bio: z.string().max(500).nullable(),
+      });
+
+      const result = profileSchema.safeParse(req.body);
+      if (!result.success) {
+        return sendError(
+          res,
+          400,
+          "Invalid input: " + result.error.issues.map(i => i.message).join(", ")
+        );
+      }
+
+      const { name, bio } = result.data;
+
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          name,
+          bio,
+          updatedAt: new Date()
+        })
+        .where(eq(users.id, user.id))
+        .returning();
+
+      return sendSuccess(res, { user: updatedUser });
+    } catch (error) {
+      console.error("Error updating profile:", error);
+      return sendError(res, 500, "Failed to update profile");
+    }
+  });
+
   // Get AI conversation suggestions
   app.post("/api/suggest", requireAuth, async (req: Request, res: Response) => {
     try {
