@@ -3,6 +3,23 @@ import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
 import { z } from "zod";
 
+// Interest categories table
+export const interestCategories = pgTable("interest_categories", {
+  id: serial("id").primaryKey(),
+  name: text("name").unique().notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Interests table
+export const interests = pgTable("interests", {
+  id: serial("id").primaryKey(),
+  name: text("name").unique().notNull(),
+  categoryId: integer("category_id").references(() => interestCategories.id, { onDelete: 'cascade' }).notNull(),
+  description: text("description"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
 export const users = pgTable("users", {
   id: serial("id").primaryKey(),
   username: text("username").unique().notNull(),
@@ -63,6 +80,36 @@ export const messagesRelations = relations(messages, ({ one }) => ({
   }),
 }));
 
+// User interests junction table
+export const userInterests = pgTable("user_interests", {
+  id: serial("id").primaryKey(),
+  userId: integer("user_id").references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  interestId: integer("interest_id").references(() => interests.id, { onDelete: 'cascade' }).notNull(),
+  score: integer("score").default(0).notNull(), // Interest level/score from 0-100
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Add relations for interests
+export const interestRelations = relations(interests, ({ one, many }) => ({
+  category: one(interestCategories, {
+    fields: [interests.categoryId],
+    references: [interestCategories.id],
+  }),
+  users: many(userInterests),
+}));
+
+// Add relations for users with interests
+export const userInterestRelations = relations(userInterests, ({ one }) => ({
+  user: one(users, {
+    fields: [userInterests.userId],
+    references: [users.id],
+  }),
+  interest: one(interests, {
+    fields: [userInterests.interestId],
+    references: [interests.id],
+  }),
+}));
+
 // Create schemas for validation
 export const insertUserSchema = createInsertSchema(users);
 export const selectUserSchema = createSelectSchema(users);
@@ -71,6 +118,14 @@ export const selectMessageSchema = createSelectSchema(messages);
 export const insertMatchSchema = createInsertSchema(matches);
 export const selectMatchSchema = createSelectSchema(matches);
 
+// Create schemas for validation
+export const insertInterestCategorySchema = createInsertSchema(interestCategories);
+export const selectInterestCategorySchema = createSelectSchema(interestCategories);
+export const insertInterestSchema = createInsertSchema(interests);
+export const selectInterestSchema = createSelectSchema(interests);
+export const insertUserInterestSchema = createInsertSchema(userInterests);
+export const selectUserInterestSchema = createSelectSchema(userInterests);
+
 // Export types
 export type User = typeof users.$inferSelect;
 export type NewUser = typeof users.$inferInsert;
@@ -78,6 +133,12 @@ export type Match = typeof matches.$inferSelect;
 export type NewMatch = typeof matches.$inferInsert;
 export type Message = typeof messages.$inferSelect;
 export type NewMessage = typeof messages.$inferInsert;
+export type Interest = typeof interests.$inferSelect;
+export type NewInterest = typeof interests.$inferInsert;
+export type InterestCategory = typeof interestCategories.$inferSelect;
+export type NewInterestCategory = typeof interestCategories.$inferInsert;
+export type UserInterest = typeof userInterests.$inferSelect;
+export type NewUserInterest = typeof userInterests.$inferInsert;
 
 // Export schema types for auth
 export type SelectUser = User;
