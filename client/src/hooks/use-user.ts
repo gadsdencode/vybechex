@@ -122,7 +122,7 @@ export function useUser() {
       if (token) {
         setAuthToken(token);
       }
-      return response;
+      return { ...response, ok: true };
     },
     onSuccess: (data) => {
       console.log("Login successful:", data);
@@ -156,8 +156,10 @@ export function useUser() {
   });
 
   const registerMutation = useMutation({
-    mutationFn: (credentials: AuthCredentials) =>
-      handleAuthRequest("/api/register", credentials),
+    mutationFn: async (credentials: AuthCredentials) => {
+      const response = await handleAuthRequest("/api/register", credentials);
+      return { ...response, ok: true };
+    },
     onSuccess: (data) => {
       console.log("Registration successful:", data);
       queryClient.setQueryData(["/api/user"], data.user);

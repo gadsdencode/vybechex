@@ -2,6 +2,7 @@ import { useState } from "react";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
+import { useLocation } from "wouter";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -42,12 +43,20 @@ export default function AuthPage() {
     },
   });
 
+  const [, setLocation] = useLocation();
+
   const onSubmit = async (data: AuthFormData) => {
     try {
       if (isLogin) {
-        await login(data);
+        const response = await login(data);
+        if (response.ok) {
+          setLocation("/");
+        }
       } else {
-        await register(data);
+        const response = await register(data);
+        if (response.ok) {
+          setLocation("/");
+        }
       }
     } catch (error: any) {
       toast({
