@@ -49,12 +49,49 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
     try {
       setIsConnecting(true);
       const response = await connect({ id: match.id.toString() });
-      if (response.status === 'accepted') {
-        setLocation(`/chat/${match.id}`);
+      
+      // Check the match status and handle accordingly
+      switch (response.status) {
+        case 'accepted':
+          toast({
+            title: "Match Connected! 🎉",
+            description: "You can now start chatting",
+            variant: "default"
+          });
+          setLocation(`/chat/${response.id}`);
+          break;
+        
+        case 'requested':
+          toast({
+            title: "Request Sent ✨",
+            description: "We'll notify you when they respond",
+            variant: "default"
+          });
+          setLocation('/matches');
+          break;
+        
+        case 'pending':
+          toast({
+            title: "Request Pending ⏳",
+            description: "Your request is still waiting for a response",
+            variant: "default"
+          });
+          setLocation('/matches');
+          break;
+        
+        default:
+          // Handle any other status
+          toast({
+            title: "Status Updated",
+            description: `Match status: ${response.status}`,
+            variant: "default"
+          });
+          setLocation('/matches');
       }
     } catch (error) {
+      console.error('Connect error:', error);
       toast({
-        title: "Error",
+        title: "Connection Failed",
         description: error instanceof Error ? error.message : "Failed to connect with match",
         variant: "destructive",
       });

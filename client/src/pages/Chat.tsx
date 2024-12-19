@@ -155,13 +155,40 @@ export default function Chat() {
     );
   }
 
-  if (match.status !== 'accepted') {
+  if (!match || !match.status) {
     return (
       <div className="flex flex-col items-center justify-center h-screen gap-4">
-        <p>This match must be accepted before you can chat</p>
+        <p>Match not found or invalid status</p>
         <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
       </div>
     );
+  }
+
+  switch (match.status) {
+    case 'rejected':
+      return (
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <p>This match was not accepted</p>
+          <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
+        </div>
+      );
+    case 'requested':
+    case 'pending':
+      return (
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <p>Waiting for match confirmation...</p>
+          <Button onClick={() => setLocation('/matches')}>View Match Status</Button>
+        </div>
+      );
+    case 'accepted':
+      break;
+    default:
+      return (
+        <div className="flex flex-col items-center justify-center h-screen gap-4">
+          <p>Invalid match status</p>
+          <Button onClick={() => setLocation('/matches')}>Return to Matches</Button>
+        </div>
+      );
   }
 
   // Only show full loading state on initial load with no messages

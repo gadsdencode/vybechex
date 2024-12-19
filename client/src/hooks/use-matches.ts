@@ -355,19 +355,18 @@ export function useMatches(): UseMatchesReturn {
 
   const connect = async ({ id }: { id: string }): Promise<Match> => {
     try {
-      // Input validation
       if (!id || isNaN(parseInt(id))) {
         throw new Error('Invalid user ID provided');
       }
 
-      // Enhanced request with better error context
-      const response = await fetch(`/api/matches/${id}/connect`, {
+      const response = await fetch('/api/matches', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        credentials: 'include'
+        credentials: 'include',
+        body: JSON.stringify({ targetUserId: parseInt(id) })
       });
 
       let data;
@@ -380,64 +379,54 @@ export function useMatches(): UseMatchesReturn {
 
       if (!response.ok) {
         const errorMessage = data?.message || 'Failed to connect';
-        const errorCode = response.status;
-        
-        // Handle specific error cases
-        switch (errorCode) {
-          case 400:
-            throw new Error(`Invalid request: ${errorMessage}`);
-          case 401:
-            throw new Error('Please log in to connect with other users');
-          case 403:
-            throw new Error('You do not have permission to perform this action');
-          case 404:
-            throw new Error('User not found');
-          case 409:
-            throw new Error('A match request already exists with this user');
-          default:
-            throw new Error(`Connection failed: ${errorMessage}`);
-        }
+        throw new Error(errorMessage);
       }
 
       // Success handling
-      const match = data;
-      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      if (!data.data?.match) {
+        throw new Error('Invalid response format from server');
+      }
 
-      // Enhanced status messages with more context
+      const { match, type } = data.data;
+
+      // Invalidate queries to refresh the UI
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+      queryClient.invalidateQueries({ queryKey: ['match-requests'] });
+
+      // Show appropriate status messages
       const toastMessages = {
-        accepted: {
-          title: "Match Accepted! 🎉",
-          description: "Great news! You're now connected. Click 'Start Chat' to begin your conversation.",
+        created: {
+          title: "Match Request Sent ✨",
+          description: "We'll notify you when they respond!",
           variant: "default" as const
         },
-        requested: {
-          title: "Request Sent Successfully ✨",
-          description: "Your connection request has been sent. We'll notify you as soon as they respond!",
+        updated: {
+          title: "Match Accepted! 🎉",
+          description: "You can now start chatting!",
           variant: "default" as const
         },
         pending: {
-          title: "Request Already Sent ⏳",
-          description: "You've already sent a connection request to this person. Please wait for their response.",
+          title: "Request Pending ⏳",
+          description: "Your request is still waiting for a response.",
           variant: "default" as const
         },
-        rejected: {
-          title: "Request Declined",
-          description: "This user has declined your connection request.",
-          variant: "destructive" as const
+        existing: {
+          title: "Already Connected",
+          description: "You're already connected with this user.",
+          variant: "default" as const
         }
       };
 
-      const statusMessage = toastMessages[match.status as keyof typeof toastMessages];
-      if (statusMessage) {
+      const message = toastMessages[type as keyof typeof toastMessages];
+      if (message) {
         toast({
-          ...statusMessage,
+          ...message,
           duration: 5000,
         });
       }
 
       return match;
     } catch (error) {
-      // Enhanced error handling with better user feedback
       console.error('Match connection error:', error);
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
       
