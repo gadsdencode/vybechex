@@ -7,6 +7,7 @@ import { MessageCircle, UserPlus, Zap, Loader2, User, Heart, Star, ChevronDown, 
 import { useMatches } from '@/hooks/use-matches';
 import { Link, useLocation } from "wouter";
 import { toast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
 import {
   Dialog,
   DialogContent,
@@ -26,6 +27,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   const [isConnecting, setIsConnecting] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [, setLocation] = useLocation();
+  const queryClient = useQueryClient();
 
   // Transform personality traits into interests format
   const traits = match.personalityTraits || {};
@@ -56,42 +58,51 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
     }
 
     try {
-      setIsConnecting(true);
-      const response = await connect({ id: match.id.toString() });
-      
-      // Handle different match statuses with appropriate feedback
-      switch (response.status) {
-        case 'accepted':
+        if (!match.id) {
           toast({
-            title: "Match Connected!",
-            description: "You can now start chatting",
-            variant: "default"
+            title: "Connection Failed",
+            description: "Invalid match data",
+            variant: "destructive"
           });
-          // Ensure we have a valid match ID before redirecting
-          if (response.id) {
-            setLocation(`/chat/${response.id}`);
-          } else {
-            console.error('Missing match ID in response:', response);
+          return;
+        }
+
+        setIsConnecting(true);
+        const response = await connect({ id: match.id.toString() });
+        
+        // Handle different match statuses with appropriate feedback
+        switch (response.status) {
+          case 'accepted':
+            toast({
+              title: "Match Connected!",
+              description: "You can now start chatting",
+              variant: "default"
+            });
+            // Ensure we have a valid match ID before redirecting
+            if (response.id) {
+              setLocation(`/chat/${response.id}`);
+            } else {
+              console.error('Missing match ID in response:', response);
+              setLocation('/matches');
+            }
+            break;
+          
+          case 'requested':
+          case 'pending':
+            toast({
+              title: response.status === 'requested' ? "Request Sent" : "Request Pending",
+              description: "We'll notify you when they respond",
+              variant: "default"
+            });
             setLocation('/matches');
-          }
-          break;
-        
-        case 'requested':
-        case 'pending':
-          toast({
-            title: response.status === 'requested' ? "Request Sent" : "Request Pending",
-            description: "We'll notify you when they respond",
-            variant: "default"
-          });
-          setLocation('/matches');
-          break;
-        
-        default:
-          console.warn('Unexpected match status:', response.status);
-          // Query the match status again to ensure we have the latest data
-          queryClient.invalidateQueries({ queryKey: ['matches'] });
-          setLocation('/matches');
-      }
+            break;
+          
+          default:
+            console.warn('Unexpected match status:', response.status);
+            // Query the match status again to ensure we have the latest data
+            queryClient.invalidateQueries({ queryKey: ['matches'] });
+            setLocation('/matches');
+        }
     } catch (error) {
       console.error('Connect error:', error);
       

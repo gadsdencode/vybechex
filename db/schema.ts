@@ -110,10 +110,11 @@ export const matches = pgTable("matches", {
     .notNull()
     .default("requested"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
-  // Add verification fields
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+  // Match metadata
   verifiedAt: timestamp("verified_at"),
   verificationCode: text("verification_code"),
-  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
+  matchType: text("match_type", { enum: ['request', 'direct'] }).default('request').notNull(),
 });
 
 export const messages = pgTable("messages", {
