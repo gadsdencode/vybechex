@@ -1,4 +1,26 @@
 // server/routes.ts
+import { z } from "zod";
+import { eq } from "drizzle-orm";
+import { users, type SelectUser } from "@db/schema";
+import { db } from "@db";
+
+// Helper functions for consistent API responses
+const sendError = (res: Response, status: number, message: string, error?: any) => {
+  console.error(`Error ${status}: ${message}`, error);
+  return res.status(status).json({ success: false, message });
+};
+
+const sendSuccess = (res: Response, data: any) => {
+  return res.status(200).json({ success: true, data });
+};
+
+// Auth middleware
+const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.isAuthenticated()) {
+    return sendError(res, 401, "Authentication required");
+  }
+  next();
+};
 
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
