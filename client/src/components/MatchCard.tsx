@@ -65,6 +65,8 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
 
   const getStatusBadge = () => {
     switch (match.status) {
+      case 'none':
+        return <Badge variant="secondary">Potential Match</Badge>;
       case 'pending':
         return <Badge variant="secondary">Pending Confirmation</Badge>;
       case 'requested':
@@ -74,12 +76,32 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
       case 'rejected':
         return <Badge variant="destructive">Not a Match</Badge>;
       default:
-        return null;
+        return <Badge variant="secondary">Potential Match</Badge>;
     }
   };
 
   const getActionButton = () => {
     switch (match.status) {
+      case 'none':
+        return (
+          <Button
+            className="w-full"
+            onClick={handleConnect}
+            disabled={isConnecting}
+          >
+            {isConnecting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Connecting...
+              </>
+            ) : (
+              <>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Connect
+              </>
+            )}
+          </Button>
+        );
       case 'pending':
         return (
           <Button
@@ -123,8 +145,27 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
           </Button>
         );
       case 'rejected':
-      default:
         return null;
+      default:
+        return (
+          <Button
+            className="w-full"
+            onClick={handleConnect}
+            disabled={isConnecting}
+          >
+            {isConnecting ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Connecting...
+              </>
+            ) : (
+              <>
+                <UserPlus className="mr-2 h-4 w-4" />
+                Connect
+              </>
+            )}
+          </Button>
+        );
     }
   };
 
