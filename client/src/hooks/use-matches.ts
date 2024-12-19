@@ -401,14 +401,15 @@ export function useMatches(): UseMatchesReturn {
           // Prepare request payload with proper typing
           // Prepare match request payload with all required fields
           const matchData = {
-            userId1: currentUserId,
-            userId2: parsedId,
-            matchType: 'request' as const,
+            user_id_1: currentUserId,
+            user_id_2: parsedId,
+            match_type: 'request' as const,
             status: 'requested' as const,
-            score: 0, // Initial compatibility score
-            lastActivityAt: new Date().toISOString(),
-            verificationCode: null, // Optional verification code
-            verifiedAt: null // Optional verification timestamp
+            score: 0,
+            created_at: new Date().toISOString(),
+            last_activity_at: new Date().toISOString(),
+            verification_code: null,
+            verified_at: null
           };
 
           console.log('Sending match request with data:', matchData);
@@ -421,11 +422,7 @@ export function useMatches(): UseMatchesReturn {
               'Authorization': `Bearer ${authToken}`
             },
             credentials: 'include',
-            body: JSON.stringify({
-              ...matchData,
-              created_at: new Date().toISOString(), // Ensure proper date format
-              last_activity_at: new Date().toISOString()
-            })
+            body: JSON.stringify(matchData)
           });
 
           let responseData;
@@ -437,13 +434,29 @@ export function useMatches(): UseMatchesReturn {
           }
 
           if (!response.ok) {
+            // Enhanced error logging
+            console.error('Match request failed:', {
+              status: response.status,
+              statusText: response.statusText,
+              data: responseData,
+              requestData: matchData,
+              timestamp: new Date().toISOString()
+            });
+
+            // Check for specific database errors
+            if (responseData?.error?.code === '42703') {
+              console.error('Database column error:', responseData.error);
+              throw new Error('Database configuration error. Please try again later.');
+            }
+
             const errorMessage = responseData?.message || 'An error occurred while processing the match request';
             
             switch (response.status) {
               case 400:
                 throw new Error(`Invalid request: ${errorMessage}`);
               case 401:
-                throw new Error('Please log in to initiate matches');
+                queryClient.invalidateQueries({ queryKey: ['user'] });
+                throw new Error('Authentication required. Please log in again.');
               case 403:
                 throw new Error('You do not have permission to initiate matches');
               case 404:
@@ -455,8 +468,8 @@ export function useMatches(): UseMatchesReturn {
               case 429:
                 throw new Error('Too many requests. Please try again later.');
               case 500:
-                // Server errors are retryable
-                throw new Error('Server error occurred. Retrying...');
+                console.error('Server error details:', responseData);
+                throw new Error('Server configuration error. Please try again later.');
               default:
                 throw new Error(`${errorMessage} (Status: ${response.status})`);
             }
