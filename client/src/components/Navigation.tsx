@@ -2,7 +2,7 @@ import { Link, useLocation } from "wouter";
 import { useUser } from "../hooks/use-user";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "./ThemeToggle";
-import { Home, Users, MessageSquare, LogOut } from "lucide-react";
+import { Home, Users, MessageSquare, LogOut, User } from "lucide-react";
 
 export default function Navigation() {
   const [location] = useLocation();
@@ -53,6 +53,16 @@ export default function Navigation() {
             <span className="text-sm text-muted-foreground">
               Welcome, {user?.username}
             </span>
+            <Button
+              variant={location === "/profile" ? "default" : "ghost"}
+              size="sm"
+              asChild
+            >
+              <Link href="/profile">
+                <User className="h-4 w-4 mr-2" />
+                Profile
+              </Link>
+            </Button>
             <Button
               variant="ghost"
               size="sm"
