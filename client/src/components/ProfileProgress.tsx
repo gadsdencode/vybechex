@@ -2,17 +2,24 @@ import { Progress } from "@/components/ui/progress";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useAchievements } from "@/hooks/use-achievements";
-import { Star, Trophy, XCircle } from "lucide-react";
+import { Star, Trophy, XCircle, Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export function ProfileProgress() {
-  const { achievements, progress, isLoading } = useAchievements();
+  const { achievements, progress, isLoading, totalProgress, unlockedAchievements, lockedAchievements } = useAchievements();
 
-  if (isLoading || !progress) {
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-32">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
+    );
+  }
+
+  if (!progress) {
     return null;
   }
 
-  const completionPercentage = Math.round(progress.completionPercentage);
   const nextLevelXp = progress.level * 1000; // Simple XP calculation
   const xpProgress = (progress.totalPoints / nextLevelXp) * 100;
 
@@ -31,11 +38,24 @@ export function ProfileProgress() {
         <CardContent>
           <Progress value={xpProgress} className="h-2" />
           
-          <div className="mt-4 grid grid-cols-2 gap-4 text-sm">
+          <div className="mt-6 space-y-4">
             <div>
-              <span className="text-muted-foreground">Profile Completion</span>
-              <Progress value={completionPercentage} className="mt-2 h-2" />
-              <span className="mt-1 text-xs text-muted-foreground">{completionPercentage}%</span>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-sm font-medium">Profile Completion</span>
+                <span className="text-sm text-muted-foreground">{totalProgress}%</span>
+              </div>
+              <Progress value={totalProgress} className="h-2" />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 pt-2">
+              <div className="flex flex-col items-center p-3 bg-muted rounded-lg">
+                <span className="text-2xl font-bold">{unlockedAchievements.length}</span>
+                <span className="text-sm text-muted-foreground">Achievements</span>
+              </div>
+              <div className="flex flex-col items-center p-3 bg-muted rounded-lg">
+                <span className="text-2xl font-bold">{progress.totalPoints}</span>
+                <span className="text-sm text-muted-foreground">Total XP</span>
+              </div>
             </div>
           </div>
         </CardContent>
@@ -48,7 +68,7 @@ export function ProfileProgress() {
             Achievements
           </CardTitle>
           <CardDescription>
-            Unlock achievements by completing profile tasks
+            Complete profile tasks to earn rewards and level up
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -60,8 +80,10 @@ export function ProfileProgress() {
                 <div
                   key={achievement.id}
                   className={cn(
-                    "flex items-start gap-3 p-3 rounded-lg",
-                    isUnlocked ? "bg-primary/10" : "bg-muted/50 opacity-50"
+                    "flex items-start gap-3 p-3 rounded-lg transition-all duration-200",
+                    isUnlocked 
+                      ? "bg-primary/10 border border-primary/20" 
+                      : "bg-muted/50 opacity-80 hover:opacity-100"
                   )}
                 >
                   <div className="text-2xl">{achievement.icon}</div>
@@ -70,7 +92,13 @@ export function ProfileProgress() {
                       <h4 className="font-medium leading-none">
                         {achievement.name}
                       </h4>
-                      <Badge variant={isUnlocked ? "default" : "secondary"} className="ml-auto">
+                      <Badge 
+                        variant={isUnlocked ? "default" : "secondary"} 
+                        className={cn(
+                          "ml-auto",
+                          isUnlocked && "bg-primary/20 text-primary hover:bg-primary/30"
+                        )}
+                      >
                         {achievement.points} XP
                       </Badge>
                     </div>
@@ -78,8 +106,10 @@ export function ProfileProgress() {
                       {achievement.description}
                     </p>
                   </div>
-                  {isUnlocked && (
+                  {isUnlocked ? (
                     <Trophy className="h-5 w-5 text-yellow-500 flex-shrink-0" />
+                  ) : (
+                    <XCircle className="h-5 w-5 text-muted-foreground/50 flex-shrink-0" />
                   )}
                 </div>
               );
