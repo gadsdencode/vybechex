@@ -1,8 +1,10 @@
 // server/routes.ts
-import { z } from "zod";
-import { eq } from "drizzle-orm";
-import { users, type SelectUser } from "@db/schema";
+import type { Express, Request, Response, NextFunction } from "express";
+import { createServer, type Server } from "http";
+import { setupAuth } from "./auth";
+import { users, matches } from "@db/schema";
 import { db } from "@db";
+import { eq, and, ne, desc, or } from "drizzle-orm";
 
 // Helper functions for consistent API responses
 const sendError = (res: Response, status: number, message: string, error?: any) => {

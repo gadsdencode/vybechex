@@ -68,11 +68,15 @@ export function useUser() {
   const { toast } = useToast();
 
   const { data: user, isLoading } = useQuery<SelectUser | null>({
-    queryKey: ["/api/user"],
+    queryKey: ['/api/user'],
     queryFn: async () => {
       try {
         const response = await fetch("/api/user", {
           credentials: "include",
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
         });
   
         if (response.status === 401) {
@@ -90,8 +94,8 @@ export function useUser() {
         const userData = await response.json();
         console.log("User data fetched:", userData);
         
-        // Store user data in localStorage
         if (userData) {
+          // Store user data in localStorage
           setUserId(userData.id);
           setUserData({
             id: userData.id,
@@ -100,34 +104,60 @@ export function useUser() {
             avatar: userData.avatar,
             isGroupCreator: userData.isGroupCreator
           });
+          
+          // Force a refetch of related queries
+          queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
+          return userData;
         }
         
-        return userData;
+        return null;
       } catch (error) {
         console.error("Error in user fetch:", error);
+        clearAuthData();
         return null;
       }
     },
-    staleTime: 30000,
+    staleTime: 0, // Always fetch fresh data
     gcTime: 1000 * 60 * 5,
-    refetchOnWindowFocus: false,
-    retry: false,
+    refetchOnWindowFocus: true,
+    retry: 1,
   });
 
   const loginMutation = useMutation({
     mutationFn: async (credentials: AuthCredentials) => {
-      const response = await handleAuthRequest("/api/login", credentials);
-      // Store auth token if it's in the response
-      const token = response.token || response.authToken;
-      if (token) {
-        setAuthToken(token);
+      try {
+        const response = await fetch("/api/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(credentials),
+          credentials: "include"
+        });
+
+        if (!response.ok) {
+          const errorData = await response.text();
+          throw new Error(errorData || "Login failed");
+        }
+
+        const data = await response.json();
+        return { ...data, ok: true };
+      } catch (error) {
+        console.error("Login error:", error);
+        throw error instanceof Error ? error : new Error("Login failed");
       }
-      return { ...response, ok: true };
     },
     onSuccess: (data) => {
       console.log("Login successful:", data);
-      // Store user data in localStorage
       if (data.user) {
+        // Update user data in query cache
+        queryClient.setQueryData(["/api/user"], data.user);
+        
+        // Force refetch to ensure we have the latest data
+        queryClient.invalidateQueries({ 
+          queryKey: ["/api/user"],
+          refetchType: "all"
+        });
+        
+        // Store essential user data
         setUserId(data.user.id);
         setUserData({
           id: data.user.id,
@@ -136,13 +166,12 @@ export function useUser() {
           avatar: data.user.avatar || "/default-avatar.png",
           isGroupCreator: data.user.isGroupCreator || false
         });
+
+        toast({
+          title: "Welcome back!",
+          description: "You have been successfully logged in.",
+        });
       }
-      queryClient.setQueryData(["/api/user"], data.user);
-      queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-      toast({
-        title: "Welcome back!",
-        description: "You have been successfully logged in.",
-      });
     },
     onError: (error: Error) => {
       console.error("Login error:", error);

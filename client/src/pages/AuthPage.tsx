@@ -90,7 +90,10 @@ export default function AuthPage() {
                   <FormItem>
                     <FormLabel>Username</FormLabel>
                     <FormControl>
-                      <Input {...field} />
+                      <Input 
+                        {...field}
+                        autoComplete={isLogin ? "username" : "new-username"}
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
@@ -103,7 +106,11 @@ export default function AuthPage() {
                   <FormItem>
                     <FormLabel>Password</FormLabel>
                     <FormControl>
-                      <Input type="password" {...field} />
+                      <Input 
+                        type="password" 
+                        autoComplete={isLogin ? "current-password" : "new-password"}
+                        {...field} 
+                      />
                     </FormControl>
                     <FormMessage />
                   </FormItem>

@@ -51,11 +51,12 @@ export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: false,
-    saveUninitialized: false,
+    resave: true,
+    saveUninitialized: true,
+    // Configure session cookie settings
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: process.env.NODE_ENV === 'production', // Only use secure in production
+      secure: false, // Allow non-HTTPS for development
       sameSite: "lax",
       httpOnly: true,
       path: '/'
@@ -64,6 +65,11 @@ export function setupAuth(app: Express) {
       checkPeriod: 86400000, // prune expired entries every 24h
     }),
   };
+
+  if (app.get("env") === "production") {
+    app.set("trust proxy", 1);
+    sessionSettings.cookie.secure = true;
+  }
 
   app.use(session(sessionSettings));
   app.use(passport.initialize());
