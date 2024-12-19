@@ -202,49 +202,51 @@ export function setupAuth(app: Express) {
         });
       }
 
-      return new Promise((resolve) => {
-        passport.authenticate("local", (err: any, user: Express.User | false, info: IVerifyOptions) => {
-          if (err) {
-            console.error("Login error:", err);
-            return res.status(500).json({ 
-              message: "Internal server error during login",
-              error: app.get('env') === 'development' ? err.message : undefined
-            });
-          }
-
-          if (!user) {
-            return res.status(401).json({ 
-              message: info?.message || "Invalid username or password"
-            });
-          }
-
-          req.logIn(user, (loginErr) => {
-            if (loginErr) {
-              console.error("Session error:", loginErr);
-              return res.status(500).json({ 
-                message: "Failed to create session",
-                error: app.get('env') === 'development' ? loginErr.message : undefined
-              });
-            }
-
-            res.json({
-              message: "Login successful",
-              user: {
-                id: user.id,
-                username: user.username,
-                name: user.name,
-                quizCompleted: user.quizCompleted,
-                isGroupCreator: user.isGroupCreator,
-                avatar: user.avatar
-              },
-            });
-            resolve(true);
+      passport.authenticate("local", async (err: any, user: Express.User | false, info: IVerifyOptions) => {
+        if (err) {
+          console.error("Login error:", err);
+          return res.status(500).json({ 
+            message: "Internal server error during login",
+            error: app.get('env') === 'development' ? err.message : undefined
           });
-        })(req, res);
-      });
+        }
+
+        if (!user) {
+          return res.status(401).json({ 
+            message: info?.message || "Invalid username or password"
+          });
+        }
+
+        try {
+          await new Promise<void>((resolve, reject) => {
+            req.logIn(user, (err) => {
+              if (err) reject(err);
+              else resolve();
+            });
+          });
+
+          return res.json({
+            message: "Login successful",
+            user: {
+              id: user.id,
+              username: user.username,
+              name: user.name,
+              quizCompleted: user.quizCompleted,
+              isGroupCreator: user.isGroupCreator,
+              avatar: user.avatar
+            },
+          });
+        } catch (loginErr) {
+          console.error("Session error:", loginErr);
+          return res.status(500).json({ 
+            message: "Failed to create session",
+            error: app.get('env') === 'development' ? loginErr.message : undefined
+          });
+        }
+      })(req, res);
     } catch (error) {
       console.error("Unexpected error during login:", error);
-      res.status(500).json({ 
+      return res.status(500).json({ 
         message: "An unexpected error occurred",
         error: app.get('env') === 'development' ? error : undefined 
       });

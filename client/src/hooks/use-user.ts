@@ -27,29 +27,40 @@ async function handleAuthRequest(
   url: string,
   credentials: AuthCredentials
 ): Promise<AuthResponse> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(credentials),
-    credentials: "include",
-  });
-
-  const responseData = await response.text();
-  let parsedData;
   try {
-    parsedData = JSON.parse(responseData);
-  } catch (e) {
-    console.error("Failed to parse response:", responseData);
-    throw new Error(responseData || "An unexpected error occurred");
-  }
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(credentials),
+      credentials: "include",
+    });
 
-  if (!response.ok) {
-    const errorMessage = parsedData?.message || parsedData?.error || "An error occurred";
-    console.error(`Auth request failed (${response.status}):`, errorMessage);
-    throw new Error(errorMessage);
-  }
+    let parsedData;
+    const responseData = await response.text();
+    
+    try {
+      parsedData = JSON.parse(responseData);
+    } catch (e) {
+      console.error("Failed to parse response:", responseData);
+      throw new Error(responseData || "Invalid server response");
+    }
 
-  return parsedData;
+    if (!response.ok) {
+      const errorMessage = parsedData?.message || parsedData?.error || "Authentication failed";
+      console.error(`Auth request failed (${response.status}):`, errorMessage);
+      throw new Error(errorMessage);
+    }
+
+    // Validate the response structure
+    if (!parsedData.user || !parsedData.message) {
+      throw new Error("Invalid response format from server");
+    }
+
+    return parsedData;
+  } catch (error) {
+    console.error("Login error:", error);
+    throw error instanceof Error ? error : new Error("Authentication failed");
+  }
 }
 
 export function useUser() {
