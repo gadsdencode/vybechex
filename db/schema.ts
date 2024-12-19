@@ -105,11 +105,16 @@ export const matches = pgTable("matches", {
   id: serial("id").primaryKey(),
   userId1: integer("user_id_1").notNull().references(() => users.id, { onDelete: 'cascade' }),
   userId2: integer("user_id_2").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  score: integer("score"),
+  score: integer("score").default(0).notNull(),
   status: text("status", { enum: ['requested', 'pending', 'accepted', 'rejected'] })
     .notNull()
-    .default("pending"),
-  createdAt: timestamp("created_at").defaultNow(),
+    .default("requested"),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  // Add verification fields
+  verifiedAt: timestamp("verified_at"),
+  verificationCode: text("verification_code"),
+  lastActivityAt: timestamp("last_activity_at").defaultNow().notNull(),
 });
 
 export const messages = pgTable("messages", {

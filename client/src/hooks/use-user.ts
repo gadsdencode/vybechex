@@ -71,6 +71,7 @@ export function useUser() {
     queryKey: ['/api/user'],
     queryFn: async () => {
       try {
+        console.log('Fetching user data...');
         const response = await fetch("/api/user", {
           credentials: "include",
           headers: {
@@ -95,21 +96,21 @@ export function useUser() {
         console.log("User data fetched:", userData);
         
         if (userData) {
-          // Store user data in localStorage
           setUserId(userData.id);
           setUserData({
             id: userData.id,
             username: userData.username,
-            name: userData.name,
-            avatar: userData.avatar,
-            isGroupCreator: userData.isGroupCreator
+            name: userData.name || userData.username,
+            avatar: userData.avatar || "/default-avatar.png",
+            isGroupCreator: userData.isGroupCreator || false
           });
           
-          // Force a refetch of related queries
+          // Invalidate related queries
           queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
           return userData;
         }
         
+        clearAuthData();
         return null;
       } catch (error) {
         console.error("Error in user fetch:", error);
@@ -117,10 +118,10 @@ export function useUser() {
         return null;
       }
     },
-    staleTime: 0, // Always fetch fresh data
+    staleTime: 1000 * 60, // Cache for 1 minute
     gcTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
-    retry: 1,
+    retry: false,
   });
 
   const loginMutation = useMutation({

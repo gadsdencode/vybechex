@@ -2,37 +2,11 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth } from "./auth";
-import { users, matches } from "@db/schema";
+import { users, matches, messages, type SelectUser } from "@db/schema";
 import { db } from "@db";
-import { eq, and, ne, desc, or } from "drizzle-orm";
-
-// Helper functions for consistent API responses
-const sendError = (res: Response, status: number, message: string, error?: any) => {
-  console.error(`Error ${status}: ${message}`, error);
-  return res.status(status).json({ success: false, message });
-};
-
-const sendSuccess = (res: Response, data: any) => {
-  return res.status(200).json({ success: true, data });
-};
-
-// Auth middleware
-const requireAuth = (req: Request, res: Response, next: NextFunction) => {
-  if (!req.isAuthenticated()) {
-    return sendError(res, 401, "Authentication required");
-  }
-  next();
-};
-
-import type { Express, Request, Response, NextFunction } from "express";
-import { createServer, type Server } from "http";
-import { setupAuth } from "./auth";
-import { users, matches, messages } from "@db/schema";
-import type { SelectUser } from "@db/schema";
-import type { InsertUser } from "@db/schema";
-import { db } from "@db";
-import { and, eq, ne, desc, or, sql } from "drizzle-orm";
-import { crypto } from "./auth.js";
+import { eq, and, ne, desc, or, sql } from "drizzle-orm";
+import { z } from "zod";
+import { crypto } from "./auth";
 import { generateConversationSuggestions, craftMessageFromSuggestion, generateEventSuggestions, generateMatchExplanation } from "./utils/openai";
 import OpenAI from "openai";
 
@@ -40,122 +14,50 @@ const openaiClient = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 });
 
-// Extend Express Request type
-declare global {
-  namespace Express {
-    interface Request {
-      user?: SelectUser;
-      isAuthenticated(): boolean;
-    }
-  }
-}
+// Helper functions for consistent API responses
+const sendError = (res: Response, status: number, message: string, details?: any) => {
+  const response = {
+    success: false,
+    message,
+    ...(details && { details }),
+    timestamp: new Date().toISOString()
+  };
+  console.error(`Error ${status}: ${message}`, details);
+  return res.status(status).json(response);
+};
 
-import { calculateComplexityScore, getScoreBreakdown } from "./utils/matching";
+const sendSuccess = (res: Response, data: any, message?: string) => {
+  return res.json({
+    success: true,
+    data,
+    ...(message && { message })
+  });
+};
+
+// Match request validation schema
+const matchRequestSchema = z.object({
+  targetUserId: z.number().positive("User ID must be a positive number"),
+});
+
+type MatchRequest = z.infer<typeof matchRequestSchema>;
+
+
+// Auth middleware
+const requireAuth = (req: Request, res: Response, next: NextFunction) => {
+  if (!req.isAuthenticated()) {
+    return sendError(res, 401, "Authentication required");
+  }
+  
+  const user = req.user as SelectUser;
+  if (!user?.id) {
+    return sendError(res, 401, "Invalid session");
+  }
+
+  next();
+};
 
 export function registerRoutes(app: Express): Server {
   setupAuth(app);
-
-  // Standardized error response
-  const sendError = (res: Response, status: number, message: string, details?: any) => {
-    const response = {
-      success: false,
-      message,
-      ...(details && { details }),
-      ...(app.get('env') === 'development' && { debug: details }),
-      timestamp: new Date().toISOString()
-    };
-    return res.status(status).json(response);
-  };
-
-  // Standardized success response
-  const sendSuccess = (res: Response, data: any, message?: string) => {
-    return res.json({
-      success: true,
-      data,
-      ...(message && { message })
-    });
-  };
-
-  // Auth middleware
-  const requireAuth = (
-    req: Request,
-    res: Response,
-    next: NextFunction
-  ) => {
-    if (!req.isAuthenticated()) {
-      return sendError(res, 401, "Authentication required");
-    }
-    
-    const user = req.user as SelectUser;
-    if (!user?.id) {
-      return sendError(res, 401, "Invalid session");
-    }
-
-    next();
-  };
-
-  // Development-only route to create test users
-  if (app.get("env") === "development") {
-    app.post("/api/dev/create-test-users", async (req, res) => {
-      try {
-        // Create test users with predefined personality traits
-        const testUsers = [
-          {
-            username: "test_user1",
-            name: "Alex Johnson",
-            bio: "Love hiking and photography",
-            traits: {
-              extraversion: 0.8,
-              communication: 0.7,
-              openness: 0.9,
-              values: 0.6,
-              planning: 0.4,
-              sociability: 0.8
-            }
-          },
-          {
-            username: "test_user2",
-            name: "Sam Wilson",
-            bio: "Bookworm and coffee enthusiast",
-            traits: {
-              extraversion: 0.3,
-              communication: 0.8,
-              openness: 0.7,
-              values: 0.9,
-              planning: 0.8,
-              sociability: 0.4
-            }
-          }
-        ];
-
-        for (const testUser of testUsers) {
-          const [existingUser] = await db
-            .select()
-            .from(users)
-            .where(eq(users.username, testUser.username))
-            .limit(1);
-
-          if (!existingUser) {
-            const hashedPassword = await crypto.hash('testpass123');
-            await db.insert(users).values({
-              username: testUser.username,
-              password: hashedPassword,
-              name: testUser.name,
-              bio: testUser.bio,
-              quizCompleted: true,
-              personalityTraits: testUser.traits,
-              createdAt: new Date()
-            });
-          }
-        }
-
-        return sendSuccess(res, { message: "Test users created successfully" });
-      } catch (error) {
-        console.error("Error creating test users:", error);
-        return sendError(res, 500, "Failed to create test users", error);
-      }
-    });
-  }
 
   // Get all matches for the authenticated user with proper error handling
   app.get("/api/matches", requireAuth, async (req: Request, res: Response) => {
@@ -180,7 +82,7 @@ export function registerRoutes(app: Express): Server {
             eq(matches.userId2, users.id)
           ),
           and(
-            eq(matches.userId1, users.id),
+            eq(matches.userId1, user.id),
             eq(matches.userId2, user.id)
           )
         ))
@@ -189,93 +91,13 @@ export function registerRoutes(app: Express): Server {
           eq(users.quizCompleted, true)
         ));
 
-      // Transform the data to match the client's expected format
-      const matchesWithScores = await Promise.all(potentialMatches.map(async (result) => {
-        try {
-          // Convert personality traits to expected format
-          const userTraits = {
-            extraversion: user.personalityTraits?.extraversion || 0,
-            communication: user.personalityTraits?.communication || 0,
-            openness: user.personalityTraits?.openness || 0,
-            values: user.personalityTraits?.values || 0,
-            planning: user.personalityTraits?.planning || 0,
-            sociability: user.personalityTraits?.sociability || 0
-          };
-
-          const matchTraits = {
-            extraversion: result.personalityTraits?.extraversion || 0,
-            communication: result.personalityTraits?.communication || 0,
-            openness: result.personalityTraits?.openness || 0,
-            values: result.personalityTraits?.values || 0,
-            planning: result.personalityTraits?.planning || 0,
-            sociability: result.personalityTraits?.sociability || 0
-          };
-
-          // Get detailed score breakdown
-          const scoreDetails = getScoreBreakdown(
-            { personalityTraits: userTraits },
-            { personalityTraits: matchTraits }
-          );
-
-          // Generate personalized explanation for the match
-          const matchExplanation = await generateMatchExplanation(
-            userTraits,
-            matchTraits,
-            scoreDetails
-          );
-
-          return {
-            id: result.id,
-            username: result.username,
-            name: result.name || result.username,
-            personalityTraits: matchTraits,
-            avatar: result.avatar || "/default-avatar.png",
-            createdAt: result.createdAt?.toISOString() || new Date().toISOString(),
-            status: result.matchStatus || 'none',
-            compatibilityScore: scoreDetails.overall,
-            scoreBreakdown: {
-              components: scoreDetails.components,
-              details: scoreDetails.details
-            },
-            matchExplanation,
-            interests: []
-          };
-        } catch (error) {
-          console.error('Error processing match:', error);
-          // Return a basic version without the explanation if there's an error
-          return {
-            id: result.id,
-            username: result.username,
-            name: result.name || result.username,
-            personalityTraits: result.personalityTraits || {},
-            avatar: result.avatar || "/default-avatar.png",
-            createdAt: result.createdAt?.toISOString() || new Date().toISOString(),
-            status: result.matchStatus || 'none',
-            compatibilityScore: 0,
-            interests: []
-          };
-        }
-      }));
-
-      // Sort by compatibility score and handle undefined scores
-      const sortedMatches = matchesWithScores.sort((a, b) => {
+      // Sort by compatibility score
+      const sortedMatches = potentialMatches.sort((a, b) => {
         const scoreA = typeof a.compatibilityScore === 'number' ? a.compatibilityScore : 0;
         const scoreB = typeof b.compatibilityScore === 'number' ? b.compatibilityScore : 0;
         return scoreB - scoreA;
       });
 
-      // Debug log with more detailed information
-      console.log('Sending matches response:', {
-        isArray: Array.isArray(sortedMatches),
-        length: sortedMatches.length,
-        sample: sortedMatches[0] ? {
-          id: sortedMatches[0].id,
-          score: sortedMatches[0].compatibilityScore,
-          hasExplanation: !!sortedMatches[0].matchExplanation
-        } : null
-      });
-
-      // Send the raw array as the response
       return res.json(sortedMatches);
     } catch (error) {
       console.error("Error fetching matches:", error);
@@ -283,357 +105,36 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
-  // Get user profile and match status
-  app.get("/api/matches/:id", requireAuth, async (req, res) => {
-    try {
-      const currentUser = req.user as SelectUser;
-      const targetId = parseInt(req.params.id);
-
-      if (isNaN(targetId)) {
-        return sendError(res, 400, "Invalid user ID format");
-      }
-
-      // Prevent viewing own profile through matches endpoint
-      if (currentUser.id === targetId) {
-        return sendError(res, 400, "Invalid request", "Cannot view own profile as a match");
-      }
-
-      // Find the target user with limited public information
-      const targetUser = await db.select({
-        id: users.id,
-        username: users.username,
-        name: users.name,
-        avatar: users.avatar,
-        personalityTraits: users.personalityTraits,
-        createdAt: users.createdAt
-      })
-      .from(users)
-      .where(eq(users.id, targetId))
-      .limit(1);
-
-      if (!targetUser || targetUser.length === 0) {
-        return sendError(res, 404, "User not found", `No user exists with ID ${targetId}`);
-      }
-
-      // Find if there's an existing match between the users
-      const matchRecord = await db.select()
-        .from(matches)
-        .where(
-          or(
-            and(
-              eq(matches.userId1, currentUser.id),
-              eq(matches.userId2, targetId)
-            ),
-            and(
-              eq(matches.userId1, targetId),
-              eq(matches.userId2, currentUser.id)
-            )
-          )
-        )
-        .limit(1);
-
-      // Calculate detailed compatibility score
-      const scoreDetails = getScoreBreakdown(
-        { personalityTraits: currentUser.personalityTraits || {} },
-        { personalityTraits: targetUser[0].personalityTraits || {} }
-      );
-
-      // Return user profile with match status and detailed scoring
-      return sendSuccess(res, {
-        ...targetUser[0],
-        matchStatus: matchRecord?.[0]?.status || 'none',
-        compatibilityScore: scoreDetails.overall,
-        scoreBreakdown: {
-          components: scoreDetails.components,
-          details: scoreDetails.details
-        },
-        canInitiateMatch: !matchRecord || matchRecord.length === 0,
-        matchId: matchRecord?.[0]?.id
-      });
-    } catch (error) {
-      console.error('Error in match profile endpoint:', error);
-      return sendError(res, 500, "Server error", "Failed to retrieve user profile and match status");
-    }
-  });
-
   // Create new match
-  app.post("/api/matches/:id", requireAuth, async (req, res) => {
-    try {
-      const currentUser = req.user as SelectUser;
-      const targetId = parseInt(req.params.id);
-
-      if (isNaN(targetId)) {
-        return sendError(res, 400, "Invalid user ID format");
-      }
-
-      // Verify target user exists
-      const targetUser = await db.select()
-        .from(users)
-        .where(eq(users.id, targetId))
-        .limit(1);
-
-      if (!targetUser || targetUser.length === 0) {
-        return sendError(res, 404, "User not found", `No user exists with ID ${targetId}`);
-      }
-
-      // Check for existing match
-      const existingMatch = await db.select()
-        .from(matches)
-        .where(
-          or(
-            and(
-              eq(matches.userId1, currentUser.id),
-              eq(matches.userId2, targetId)
-            ),
-            and(
-              eq(matches.userId1, targetId),
-              eq(matches.userId2, currentUser.id)
-            )
-          )
-        )
-        .limit(1);
-
-      if (existingMatch && existingMatch.length > 0) {
-        return sendError(res, 400, "Match already exists", "A match already exists between these users", existingMatch[0].id);
-      }
-
-      // Create new match
-      const [newMatch] = await db.insert(matches)
-        .values({
-          userId1: currentUser.id,
-          userId2: targetId,
-          status: 'pending',
-          createdAt: new Date()
-        })
-        .returning();
-
-      return sendSuccess(res, newMatch);
-    } catch (error) {
-      console.error('Error creating match:', error);
-      return sendError(res, 500, "Server error", "Failed to create match");
-    }
-  });
-
-  // Connect with a match
-  app.post("/api/matches/:id/connect", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as SelectUser;
-      const targetId = parseInt(req.params.id);
-      
-      // Enhanced input validation
-      if (isNaN(targetId) || targetId <= 0) {
-        return sendError(res, 400, "Invalid user ID format. Please provide a valid positive number.");
-      }
-
-      if (targetId === user.id) {
-        return sendError(res, 400, "Cannot create a match with yourself.");
-      }
-
-      // Use a transaction to prevent race conditions
-      return await db.transaction(async (tx) => {
-        // Verify target user exists with personality traits
-        const [targetUser] = await tx
-          .select()
-          .from(users)
-          .where(eq(users.id, targetId))
-          .limit(1);
-
-        if (!targetUser) {
-          return sendError(res, 404, "User not found", 
-            `No user exists with ID ${targetId}`);
-        }
-
-        // Check if match already exists with detailed status handling
-        const [existingMatch] = await tx
-          .select()
-          .from(matches)
-          .where(
-            or(
-              and(
-                eq(matches.userId1, user.id),
-                eq(matches.userId2, targetId)
-              ),
-              and(
-                eq(matches.userId1, targetId),
-                eq(matches.userId2, user.id)
-              )
-            )
-          )
-          .limit(1);
-
-        if (existingMatch) {
-          // Enhanced status handling with appropriate responses
-          switch (existingMatch.status) {
-            case 'requested':
-              // Auto-accept if current user is the request recipient
-              if (existingMatch.userId2 === user.id) {
-                const [updatedMatch] = await tx
-                  .update(matches)
-                  .set({ 
-                    status: 'accepted',
-                    score: calculateCompatibilityScore(
-                      user.personalityTraits,
-                      targetUser.personalityTraits
-                    ),
-                    updatedAt: new Date()
-                  })
-                  .where(eq(matches.id, existingMatch.id))
-                  .returning();
-                
-                return sendSuccess(res, updatedMatch, 
-                  "Match request accepted! You can now start chatting.");
-              }
-              return sendSuccess(res, existingMatch,
-                "Your match request is still pending.");
-              
-            case 'accepted':
-              return sendSuccess(res, existingMatch,
-                "You're already matched with this user!");
-              
-            case 'rejected':
-              return sendError(res, 409, 
-                "Cannot create match",
-                "This user has previously declined your match request.");
-              
-            default:
-              return sendSuccess(res, existingMatch);
-          }
-        }
-
-        // Verify user has completed personality quiz
-        if (!user.personalityTraits || !targetUser.personalityTraits) {
-          return sendError(res, 400, 
-            "Cannot create match",
-            "Both users must complete the personality quiz before matching.");
-        }
-
-        // Calculate initial compatibility score
-        const compatibilityScore = calculateCompatibilityScore(
-          user.personalityTraits,
-          targetUser.personalityTraits
-        );
-
-        // Create new match request with compatibility score
-        const [newMatch] = await tx
-          .insert(matches)
-          .values({
-            userId1: user.id,
-            userId2: targetId,
-            status: 'requested',
-            score: compatibilityScore,
-            createdAt: new Date(),
-            updatedAt: new Date()
-          })
-          .returning();
-
-        return sendSuccess(res, newMatch,
-          "Match request sent successfully! We'll notify you when they respond.");
-      });
-    } catch (error) {
-      console.error("Error in match connection:", error);
-      const isDbError = error instanceof Error && 
-        error.message.includes('violates foreign key constraint');
-      
-      if (isDbError) {
-        return sendError(res, 409,
-          "Database constraint violation",
-          "The match request could not be processed due to data integrity constraints.",
-          user?.id
-        );
-      }
-
-      return sendError(res, 500,
-        "Failed to process match request",
-        error instanceof Error ? error.message : "An unexpected error occurred",
-        user?.id
-      );
-    }
-  });
-
-  // Get messages for a match
-  app.get("/api/matches/:id/messages", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as SelectUser;
-      const matchId = parseInt(req.params.id);
-      
-      if (isNaN(matchId) || matchId <= 0) {
-        return sendError(res, 400, "Invalid match ID. Please provide a valid positive number.");
-      }
-
-      // Verify match exists and user is part of it
-      const [match] = await db
-        .select()
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
-            )
-          )
-        )
-        .limit(1);
-
-      if (!match) {
-        return sendError(res, 404, "Match not found");
-      }
-
-      if (match.status !== 'accepted') {
-        return sendError(res, 403, "Match must be accepted to view messages");
-      }
-
-      const messageList = await db
-        .select()
-        .from(messages)
-        .where(eq(messages.matchId, matchId))
-        .orderBy(desc(messages.createdAt));
-
-      return sendSuccess(res, messageList);
-    } catch (error) {
-      console.error("Error fetching messages:", error);
-      return sendError(res, 500, "Failed to fetch messages", error);
-    }
-  });
-
-  // Quiz submission
-  app.post("/api/quiz", async (req, res) => {
-    if (!req.user) return sendError(res, 401, "Not authenticated");
-    const { traits } = req.body;
-    
-    console.log("Quiz submission for user:", req.user.id, "traits:", traits);
-    
-    try {
-      const [updatedUser] = await db.update(users)
-        .set({ 
-          personalityTraits: traits, 
-          quizCompleted: true 
-        })
-        .where(eq(users.id, req.user.id))
-        .returning();
-
-      console.log("Updated user:", updatedUser);
-
-      // Send back updated user data
-      return sendSuccess(res, { user: updatedUser });
-    } catch (error) {
-      console.error("Error updating user quiz:", error);
-      return sendError(res, 500, "Failed to update quiz completion status", error);
-    }
-  });
-
-  // Create a match request
   app.post("/api/matches", requireAuth, async (req, res) => {
     try {
       const user = req.user as SelectUser;
-      const { userId2, score } = req.body;
-      
-      if (!userId2 || typeof score !== 'number') {
-        return sendError(res, 400, "Invalid request. userId2 and score are required.");
+      const { targetUserId } = req.body;
+
+      // Validate request data
+      const result = matchRequestSchema.safeParse({ targetUserId });
+      if (!result.success) {
+        return sendError(res, 400, "Invalid request data", result.error.issues);
       }
 
-      // Use a transaction to prevent race conditions
-      const result = await db.transaction(async (tx) => {
+      // Prevent self-matching
+      if (targetUserId === user.id) {
+        return sendError(res, 400, "Cannot create a match with yourself");
+      }
+
+      // Use transaction for consistency
+      return await db.transaction(async (tx) => {
+        // Check if target user exists
+        const [targetUser] = await tx
+          .select()
+          .from(users)
+          .where(eq(users.id, targetUserId))
+          .limit(1);
+
+        if (!targetUser) {
+          return sendError(res, 404, "Target user not found");
+        }
+
         // Check for existing match
         const [existingMatch] = await tx
           .select()
@@ -642,10 +143,10 @@ export function registerRoutes(app: Express): Server {
             or(
               and(
                 eq(matches.userId1, user.id),
-                eq(matches.userId2, userId2)
+                eq(matches.userId2, targetUserId)
               ),
               and(
-                eq(matches.userId1, userId2),
+                eq(matches.userId1, targetUserId),
                 eq(matches.userId2, user.id)
               )
             )
@@ -653,756 +154,26 @@ export function registerRoutes(app: Express): Server {
           .limit(1);
 
         if (existingMatch) {
-          if (existingMatch.status === 'requested') {
-            if ((existingMatch.userId1 === userId2 && existingMatch.userId2 === user.id) ||
-                (existingMatch.userId2 === userId2 && existingMatch.userId1 === user.id)) {
-              const [updatedMatch] = await tx
-                .update(matches)
-                .set({ status: 'accepted' })
-                .where(eq(matches.id, existingMatch.id))
-                .returning();
-              return { type: 'updated', match: updatedMatch };
-            }
-          }
-          return { type: 'existing', match: existingMatch };
+          return sendError(res, 409, "Match already exists");
         }
 
-        // Create new match request
+        // Create new match
         const [newMatch] = await tx
           .insert(matches)
           .values({
             userId1: user.id,
-            userId2: userId2,
-            score: score,
+            userId2: targetUserId,
             status: 'requested',
-            createdAt: new Date()
-          })
-          .returning();
-        
-        return { type: 'created', match: newMatch };
-      });
-
-      return sendSuccess(res, result.match, 
-        result.type === 'created' ? 'Match request created' :
-        result.type === 'updated' ? 'Match accepted' :
-        'Existing match found'
-      );
-    } catch (error) {
-      console.error("Error in match creation:", error);
-      return sendError(res, 500, "Failed to process match request", error);
-    }
-  });
-
-  // Accept or reject a match request
-  app.post("/api/matches/:matchId", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as SelectUser;
-      const { status } = req.body;
-      
-      // Validate user authentication
-      if (!user?.id) {
-        return sendError(res, 401, "Authentication required");
-      }
-      
-      // Validate status
-      if (!status || !['accepted', 'rejected'].includes(status)) {
-        return sendError(res, 400, "Invalid status. Must be either 'accepted' or 'rejected'.");
-      }
-
-      // Validate and parse match ID
-      const matchId = parseInt(req.params.matchId);
-      if (isNaN(matchId) || matchId <= 0) {
-        return sendError(res, 400, "Invalid match ID format. Please provide a valid positive number.");
-      }
-
-      // Use transaction for consistency
-      return await db.transaction(async (tx) => {
-        // Get the current match with both users' information using table aliases
-        const requesterAlias = users;
-        const receiverAlias = users;
-        
-        const matchWithUsers = await tx
-          .select({
-            match: matches,
-            requester: {
-              id: requesterAlias.id,
-              username: requesterAlias.username,
-              name: requesterAlias.name,
-              avatar: requesterAlias.avatar,
-              personalityTraits: requesterAlias.personalityTraits,
-              quizCompleted: requesterAlias.quizCompleted
-            },
-            receiver: {
-              id: receiverAlias.id,
-              username: receiverAlias.username,
-              name: receiverAlias.name,
-              avatar: receiverAlias.avatar,
-              personalityTraits: receiverAlias.personalityTraits,
-              quizCompleted: receiverAlias.quizCompleted
-            }
-          })
-          .from(matches)
-          .leftJoin(requesterAlias, eq(matches.userId1, requesterAlias.id))
-          .leftJoin(receiverAlias, eq(matches.userId2, receiverAlias.id))
-          .where(eq(matches.id, matchId))
-          .limit(1);
-
-        const currentMatch = matchWithUsers[0];
-
-        if (!currentMatch?.match) {
-          return sendError(res, 404, "Match request not found");
-        }
-
-        // Verify the user is the receiver of the request
-        if (currentMatch.match.userId2 !== user.id) {
-          return sendError(res, 403, "Only the match recipient can accept or reject the request");
-        }
-
-        // Only allow accepting/rejecting requested matches
-        if (currentMatch.match.status !== 'requested') {
-          return sendError(res, 400, 
-            "Invalid match status",
-            `Can only accept/reject pending match requests. Current status: ${currentMatch.match.status}`
-          );
-        }
-
-        // Verify both users have completed the personality quiz if accepting
-        if (status === 'accepted') {
-          if (!currentMatch.requester?.quizCompleted || !currentMatch.receiver?.quizCompleted) {
-            return sendError(res, 400, 
-              "Cannot accept match",
-              "Both users must complete the personality quiz before accepting a match."
-            );
-          }
-        }
-
-        // Calculate compatibility score if accepting the match
-        let compatibilityScore = 0;
-        if (status === 'accepted' && currentMatch.requester && currentMatch.receiver) {
-          compatibilityScore = calculateCompatibilityScore(
-            currentMatch.requester.personalityTraits,
-            currentMatch.receiver.personalityTraits
-          );
-        }
-
-        // Update match status
-        const [updatedMatch] = await tx
-          .update(matches)
-          .set({ 
-            status,
-            score: status === 'accepted' ? compatibilityScore : null,
+            createdAt: new Date(),
             updatedAt: new Date()
           })
-          .where(eq(matches.id, matchId))
           .returning();
 
-        // Format user details for response
-        const requester = currentMatch.requester ? {
-          id: currentMatch.requester.id,
-          username: currentMatch.requester.username,
-          name: currentMatch.requester.name || currentMatch.requester.username,
-          avatar: currentMatch.requester.avatar || "/default-avatar.png",
-          personalityTraits: currentMatch.requester.personalityTraits || {}
-        } : null;
-
-        const receiver = currentMatch.receiver ? {
-          id: currentMatch.receiver.id,
-          username: currentMatch.receiver.username,
-          name: currentMatch.receiver.name || currentMatch.receiver.username,
-          avatar: currentMatch.receiver.avatar || "/default-avatar.png",
-          personalityTraits: currentMatch.receiver.personalityTraits || {}
-        } : null;
-
-        if (!requester || !receiver) {
-          return sendError(res, 500, "Failed to load complete user details for match");
-        }
-
-        // Prepare detailed response
-        const response = {
-          ...updatedMatch,
-          requester,
-          receiver,
-          compatibilityScore: status === 'accepted' ? compatibilityScore : null
-        };
-
-        return sendSuccess(res, response, 
-          status === 'accepted' 
-            ? "Match request accepted! You can now start chatting."
-            : "Match request rejected. The user will be notified."
-        );
+        return sendSuccess(res, newMatch, "Match request sent successfully");
       });
     } catch (error) {
-      console.error("Error updating match:", error);
-      const isDbError = error instanceof Error && 
-        error.message.includes('violates foreign key constraint');
-
-      return sendError(res, 
-        isDbError ? 409 : 500,
-        isDbError ? "Database constraint violation" : "Failed to update match",
-        error instanceof Error ? error.message : "An unexpected error occurred"
-      );
-    }
-  });
-
-  // Get match requests
-  app.get("/api/matches/requests", requireAuth, async (req, res) => {
-    try {
-      console.log('Match requests endpoint - Start');
-      
-      // First ensure we have an authenticated user
-      if (!req.isAuthenticated()) {
-        console.log('User not authenticated');
-        return sendError(res, 401, "Authentication required");
-      }
-
-      const user = req.user as SelectUser;
-      console.log('Authenticated user:', user);
-
-      // Basic existence check
-      if (!user) {
-        console.log('No user object after auth check');
-        return sendError(res, 401, "No user found in session");
-      }
-
-      // Validate user ID strictly
-      const userId = user.id;
-      if (userId === undefined || userId === null) {
-        console.log('User ID is undefined or null');
-        return sendError(res, 401, "Invalid session - no user ID");
-      }
-
-      // Ensure it's a valid positive number
-      if (!Number.isInteger(userId) || userId <= 0) {
-        console.log('Invalid user ID value:', userId);
-        return sendError(res, 400, "Invalid user ID value");
-      }
-
-      console.log('User validation passed, proceeding with match requests query');
-
-      // Get all matches where the current user is the recipient (userId2) and status is 'requested'
-      const matchRequests = await db
-        .select({
-          match: matches,
-          requester: users
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.userId2, user.id),
-            eq(matches.status, 'requested')
-          )
-        )
-        .innerJoin(users, eq(matches.userId1, users.id))
-        .orderBy(desc(matches.createdAt));
-
-      // Format the response
-      console.log('Successfully fetched match requests:', {
-        count: matchRequests.length,
-        sample: matchRequests[0] ? {
-          matchId: matchRequests[0].match.id,
-          requesterId: matchRequests[0].requester.id
-        } : null
-      });
-
-      const formattedRequests = matchRequests.map(request => {
-        const formatted = {
-          id: request.match.id,
-          requester: {
-            id: request.requester.id,
-            username: request.requester.username,
-            name: request.requester.name || request.requester.username,
-            avatar: request.requester.avatar || "/default-avatar.png",
-            personalityTraits: request.requester.personalityTraits || {},
-            createdAt: request.requester.createdAt
-          },
-          status: request.match.status,
-          createdAt: request.match.createdAt
-        };
-        
-        return formatted;
-      });
-
-      console.log('Formatted requests:', {
-        count: formattedRequests.length,
-        sample: formattedRequests[0] ? {
-          id: formattedRequests[0].id,
-          requesterId: formattedRequests[0].requester.id
-        } : null
-      });
-
-      return sendSuccess(res, { requests: formattedRequests });
-    } catch (error) {
-      console.error("Error in match requests:", {
-        error,
-        message: error instanceof Error ? error.message : 'Unknown error',
-        stack: error instanceof Error ? error.stack : undefined,
-        userId: user?.id
-      });
-
-      if (error instanceof Error) {
-        // Database-related errors
-        if (error.message.includes('relation') || error.message.includes('column')) {
-          return sendError(res, 500, "Database error", error.message);
-        }
-        // Other known errors
-        return sendError(res, 500, "Failed to fetch match requests", error.message);
-      }
-      
-      return sendError(res, 500, "Failed to fetch match requests", "Unknown error occurred");
-    } finally {
-      console.log('Match requests operation completed for user:', user?.id);
-    }
-  });
-
-  // Update user profile
-  app.post("/api/user/profile", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as SelectUser;
-      if (!user?.id) {
-        return sendError(res, 401, "Authentication required");
-      }
-
-      const profileSchema = z.object({
-        name: z.string().min(2).max(50).nullable(),
-        bio: z.string().max(500).nullable(),
-      });
-
-      const result = profileSchema.safeParse(req.body);
-      if (!result.success) {
-        return sendError(
-          res,
-          400,
-          "Invalid input: " + result.error.issues.map(i => i.message).join(", ")
-        );
-      }
-
-      const { name, bio } = result.data;
-
-      const [updatedUser] = await db
-        .update(users)
-        .set({
-          name,
-          bio,
-          updatedAt: new Date()
-        })
-        .where(eq(users.id, user.id))
-        .returning();
-
-      return sendSuccess(res, { user: updatedUser });
-    } catch (error) {
-      console.error("Error updating profile:", error);
-      return sendError(res, 500, "Failed to update profile");
-    }
-  });
-
-  // Get AI conversation suggestions
-  app.post("/api/suggest", requireAuth, async (req: Request, res: Response) => {
-    try {
-      const { matchId } = req.body;
-      if (!matchId || isNaN(parseInt(matchId))) {
-        return sendError(res, 400, "Valid match ID is required");
-      }
-      
-      // Type assertion since requireAuth ensures req.user exists
-      const user = req.user as SelectUser;
-      const parsedMatchId = parseInt(matchId);
-      
-      // Get match with both users
-      const [matchDetails] = await db
-        .select({
-          id: matches.id,
-          userId1: matches.userId1,
-          userId2: matches.userId2,
-          status: matches.status
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, parsedMatchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
-            )
-          )
-        )
-        .limit(1);
-
-      if (!matchDetails) {
-        return sendError(res, 404, "Match not found");
-      }
-
-      if (matchDetails.status !== 'accepted') {
-        return sendError(res, 403, "Match must be accepted to get suggestions");
-      }
-
-      // Get the other user's data
-      const otherUserId = matchDetails.userId1 === user.id ? matchDetails.userId2 : matchDetails.userId1;
-      const [otherUser] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, otherUserId))
-        .limit(1);
-
-      if (!otherUser) {
-        return sendError(res, 404, "Match user not found");
-      }
-
-      // Get recent chat history
-      const recentMessages = await db
-        .select({
-          content: messages.content,
-          senderId: messages.senderId
-        })
-        .from(messages)
-        .where(eq(messages.matchId, matchId))
-        .orderBy(desc(messages.createdAt))
-        .limit(5);
-
-      const suggestions = await generateConversationSuggestions(
-        req.user!.personalityTraits || {},
-        otherUser.personalityTraits || {},
-        recentMessages.reverse(),
-        req.user!.id
-      );
-
-      return sendSuccess(res, { suggestions });
-    } catch (error) {
-      console.error("Error generating suggestions:", error);
-      return sendError(res, 500, "Failed to generate suggestions", error);
-    }
-  });
-
-  // Craft a message from a suggestion
-  app.post("/api/craft-message", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as SelectUser;
-      const { suggestion, matchId } = req.body;
-      
-      if (!suggestion || !matchId) {
-        return sendError(res, 400, "Missing required fields: suggestion and matchId");
-      }
-
-      // Join with users table to get personality traits
-      const matchResults = await db
-        .select({
-          match: matches,
-          matchUser: users
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
-            )
-          )
-        )
-        .leftJoin(users, 
-          or(
-            and(
-              eq(matches.userId1, users.id),
-              ne(users.id, user.id)
-            ),
-            and(
-              eq(matches.userId2, users.id),
-              ne(users.id, user.id)
-            )
-          )
-        );
-
-      const matchWithUser = matchResults[0];
-      
-      if (!matchWithUser) {
-        return sendError(res, 404, "Match not found");
-      }
-
-      if (matchWithUser.match.status !== 'accepted') {
-        return sendError(res, 403, "Match must be accepted to craft messages");
-      }
-
-      const craftedMessage = await craftMessageFromSuggestion(
-        suggestion,
-        user.personalityTraits || {},
-        matchWithUser.matchUser?.personalityTraits || {}
-      );
-
-      return sendSuccess(res, { message: craftedMessage });
-    } catch (error) {
-      console.error("Error crafting message:", error);
-      return sendError(res, 500, "Failed to craft message", error);
-    }
-  });
-
-  // Suggest events
-  app.post("/api/events/suggest", requireAuth, async (req, res) => {
-    try {
-      const user = req.user as SelectUser;
-      const { matchId } = req.body;
-      
-      if (!matchId) {
-        return sendError(res, 400, "Match ID is required");
-      }
-
-      // Join with users table to get personality traits
-      const matchResults = await db
-        .select({
-          match: matches,
-          matchUser: users
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, user.id)
-            )
-          )
-        )
-        .leftJoin(users, 
-          or(
-            and(
-              eq(matches.userId1, users.id),
-              ne(users.id, user.id)
-            ),
-            and(
-              eq(matches.userId2, users.id),
-              ne(users.id, user.id)
-            )
-          )
-        );
-
-      const matchWithUser = matchResults[0];
-
-      if (!matchWithUser) {
-        return sendError(res, 404, "Match not found");
-      }
-
-      if (!matchWithUser.matchUser) {
-        return sendError(res, 404, "Match user not found");
-      }
-
-      const suggestions = await generateEventSuggestions(
-        user.personalityTraits || {},
-        matchWithUser.matchUser.personalityTraits || {}
-      );
-
-      return sendSuccess(res, { suggestions });
-    } catch (error) {
-      console.error("Error generating event suggestions:", error);
-      return sendError(res, 500, "Failed to generate event suggestions", error);
-    }
-  });
-
-  // Get user details
-  app.get("/api/users/:userId", requireAuth, async (req, res) => {
-    try {
-      const userId = parseInt(req.params.userId);
-      if (isNaN(userId)) {
-        return sendError(res, 400, "Invalid user ID");
-      }
-
-      const [user] = await db
-        .select({
-          id: users.id,
-          username: users.username,
-          name: users.name,
-          bio: users.bio,
-          personalityTraits: users.personalityTraits,
-          quizCompleted: users.quizCompleted,
-          createdAt: users.createdAt
-        })
-        .from(users)
-        .where(eq(users.id, userId))
-        .limit(1);
-
-      if (!user) {
-        return sendError(res, 404, "User not found");
-      }
-
-      return sendSuccess(res, user);
-    } catch (error) {
-      console.error("Error fetching user:", error);
-      return sendError(res, 500, "Failed to fetch user details", error);
-    }
-  });
-
-  // Get single match - consolidated endpoint
-  app.get("/api/matches/:matchId", requireAuth, async (req, res) => {
-    try {
-      const matchId = parseInt(req.params.matchId);
-      if (isNaN(matchId)) {
-        return sendError(res, 400, "Invalid match ID");
-      }
-
-      // Get match with both users' information
-      const [matchWithUsers] = await db
-        .select({
-          match: {
-            id: matches.id,
-            status: matches.status,
-            userId1: matches.userId1,
-            userId2: matches.userId2,
-            score: matches.score,
-            createdAt: matches.createdAt
-          },
-          matchUser: {
-            id: users.id,
-            username: users.username,
-            name: users.name,
-            personalityTraits: users.personalityTraits
-          }
-        })
-        .from(matches)
-        .where(
-          and(
-            eq(matches.id, matchId),
-            or(
-              eq(matches.userId1, req.user!.id),
-              eq(matches.userId2, req.user!.id)
-            )
-          )
-        )
-        .leftJoin(users, eq(users.id, 
-          sql`CASE 
-            WHEN ${matches.userId1} = ${req.user!.id} THEN ${matches.userId2}
-            ELSE ${matches.userId1}
-          END`
-        ))
-        .limit(1);
-
-      if (!matchWithUsers) {
-        return sendError(res, 404, "Match not found or unauthorized");
-      }
-
-      if (!matchWithUsers.matchUser) {
-        return sendError(res, 404, "Match user not found");
-      }
-
-      // Format response
-      const matchUser = matchWithUsers.matchUser;
-      const userTraits = req.user!.personalityTraits || {};
-      const matchTraits = matchUser!.personalityTraits || {};
-
-    // Generate suggestions based on personality traits
-      const completion = await openaiClient.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant providing conversation suggestions for two people getting to know each other. Keep suggestions natural, friendly, and aligned with their personality traits."
-          },
-          {
-            role: "user",
-            content: `Generate 3 conversation starters or questions based on these personality traits:
-              Person 1 traits: ${JSON.stringify(userTraits)}
-              Person 2 traits: ${JSON.stringify(matchTraits)}
-              Make them natural and engaging, focusing on common interests or complementary traits.`
-          }
-        ]
-      });
-
-      const suggestions = completion.choices[0].message.content?.split('\n')
-        .filter((line: string) => line.trim())
-        .map((line: string) => line.replace(/^\d+\.\s*/, ''))
-        .slice(0, 3) || [];
-
-      return sendSuccess(res, { suggestions });
-    } catch (error) {
-      console.error('Error generating suggestions:', error);
-      return sendError(res, 500, "Failed to generate suggestions", error);
-    }
-  });
-
-  // Get chat suggestions based on personality traits
-  app.post("/api/chat/suggest", requireAuth, async (req, res) => {
-    try {
-      const { matchId } = req.body;
-      if (!matchId) {
-        return sendError(res, 400, "Match ID is required");
-      }
-
-      // Type assertion since requireAuth ensures req.user exists
-      const user = req.user as SelectUser;
-      if (!user) {
-        return sendError(res, 401, "Authentication required");
-      }
-      
-      // Find the match and both users' personality traits
-      const [matchWithUser] = await db
-        .select({
-          match: matches,
-          matchUser: {
-            id: users.id,
-            username: users.username,
-            name: users.name,
-            personalityTraits: users.personalityTraits
-          }
-        })
-        .from(matches)
-        .where(
-          and(
-            or(
-              and(
-                eq(matches.userId1, user.id),
-                eq(matches.userId2, parseInt(matchId))
-              ),
-              and(
-                eq(matches.userId1, parseInt(matchId)),
-                eq(matches.userId2, user.id)
-              )
-            ),
-            eq(matches.status, 'accepted')
-          )
-        )
-        .leftJoin(users, eq(users.id, 
-          sql`CASE 
-            WHEN ${matches.userId1} = ${user.id} THEN ${matches.userId2}
-            ELSE ${matches.userId1}
-          END`
-        ))
-        .limit(1);
-
-      if (!matchWithUser) {
-        return sendError(res, 404, "Match not found or not accepted");
-      }
-
-      if (!matchWithUser.matchUser) {
-        return sendError(res, 404, "Match user not found");
-      }
-
-      const matchUser = matchWithUser.matchUser;
-      const userTraits = user.personalityTraits || {};
-      const matchTraits = matchUser!.personalityTraits || {};
-
-    // Generate suggestions based on personality traits
-      const completion = await openaiClient.chat.completions.create({
-        model: "gpt-3.5-turbo",
-        messages: [
-          {
-            role: "system",
-            content: "You are a helpful assistant providing conversation suggestions for two people getting to know each other. Keep suggestions natural, friendly, and aligned with their personality traits."
-          },
-          {
-            role: "user",
-            content: `Generate 3 conversation starters or questions based on these personality traits:
-              Person 1 traits: ${JSON.stringify(userTraits)}
-              Person 2 traits: ${JSON.stringify(matchTraits)}
-              Make them natural and engaging, focusing on common interests or complementary traits.`
-          }
-        ]
-      });
-
-      const suggestions = completion.choices[0].message.content?.split('\n')
-        .filter((line: string) => line.trim())
-        .map((line: string) => line.replace(/^\d+\.\s*/, ''))
-        .slice(0, 3) || [];
-
-      return sendSuccess(res, { suggestions });
-    } catch (error) {
-      console.error('Error generating suggestions:', error);
-      return sendError(res, 500, "Failed to generate suggestions", error);
+      console.error("Error creating match:", error);
+      return sendError(res, 500, "Failed to create match", error);
     }
   });
 

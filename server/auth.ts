@@ -51,12 +51,11 @@ export function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: true,
-    saveUninitialized: true,
-    // Configure session cookie settings
+    resave: false,
+    saveUninitialized: false,
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: false, // Allow non-HTTPS for development
+      secure: false, // Will be set to true in production
       sameSite: "lax",
       httpOnly: true,
       path: '/'
@@ -68,7 +67,9 @@ export function setupAuth(app: Express) {
 
   if (app.get("env") === "production") {
     app.set("trust proxy", 1);
-    sessionSettings.cookie.secure = true;
+    if (sessionSettings.cookie) {
+      sessionSettings.cookie.secure = true;
+    }
   }
 
   app.use(session(sessionSettings));
@@ -79,18 +80,7 @@ export function setupAuth(app: Express) {
     new LocalStrategy(async (username, password, done) => {
       try {
         const [user] = await db
-          .select({
-            id: users.id,
-            username: users.username,
-            password: users.password,
-            name: users.name,
-            bio: users.bio,
-            quizCompleted: users.quizCompleted,
-            personalityTraits: users.personalityTraits,
-            createdAt: users.createdAt,
-            isGroupCreator: users.isGroupCreator,
-            avatar: users.avatar
-          })
+          .select()
           .from(users)
           .where(eq(users.username, username))
           .limit(1);
@@ -117,18 +107,7 @@ export function setupAuth(app: Express) {
   passport.deserializeUser(async (id: number, done) => {
     try {
       const [user] = await db
-        .select({
-          id: users.id,
-          username: users.username,
-          password: users.password,
-          name: users.name,
-          bio: users.bio,
-          quizCompleted: users.quizCompleted,
-          personalityTraits: users.personalityTraits,
-          createdAt: users.createdAt,
-          isGroupCreator: users.isGroupCreator,
-          avatar: users.avatar
-        })
+        .select()
         .from(users)
         .where(eq(users.id, id))
         .limit(1);
@@ -193,70 +172,60 @@ export function setupAuth(app: Express) {
     }
   });
 
-  app.post("/api/login", async (req, res) => {
-    try {
-      const loginSchema = z.object({
-        username: z.string().min(1, "Username is required"),
-        password: z.string().min(1, "Password is required"),
-      });
+  app.post("/api/login", (req, res, next) => {
+    const loginSchema = z.object({
+      username: z.string().min(1, "Username is required"),
+      password: z.string().min(1, "Password is required"),
+    });
 
-      const result = loginSchema.safeParse(req.body);
-      if (!result.success) {
-        return res.status(400).json({ 
-          message: "Invalid input", 
-          errors: result.error.issues.map(i => i.message)
+    const result = loginSchema.safeParse(req.body);
+    if (!result.success) {
+      return res.status(400).json({ 
+        success: false,
+        message: "Invalid input", 
+        errors: result.error.issues.map(i => i.message)
+      });
+    }
+
+    passport.authenticate("local", (err: any, user: Express.User | false, info: IVerifyOptions) => {
+      if (err) {
+        console.error("Login error:", err);
+        return res.status(500).json({ 
+          success: false,
+          message: "Internal server error during login"
         });
       }
 
-      passport.authenticate("local", async (err: any, user: Express.User | false, info: IVerifyOptions) => {
+      if (!user) {
+        return res.status(401).json({ 
+          success: false,
+          message: info?.message || "Invalid username or password"
+        });
+      }
+
+      req.logIn(user, (err) => {
         if (err) {
-          console.error("Login error:", err);
+          console.error("Session error:", err);
           return res.status(500).json({ 
-            message: "Internal server error during login",
-            error: app.get('env') === 'development' ? err.message : undefined
+            success: false,
+            message: "Failed to create session"
           });
         }
 
-        if (!user) {
-          return res.status(401).json({ 
-            message: info?.message || "Invalid username or password"
-          });
-        }
-
-        try {
-          await new Promise<void>((resolve, reject) => {
-            req.logIn(user, (err) => {
-              if (err) reject(err);
-              else resolve();
-            });
-          });
-
-          return res.json({
-            message: "Login successful",
-            user: {
-              id: user.id,
-              username: user.username,
-              name: user.name,
-              quizCompleted: user.quizCompleted,
-              isGroupCreator: user.isGroupCreator,
-              avatar: user.avatar
-            },
-          });
-        } catch (loginErr) {
-          console.error("Session error:", loginErr);
-          return res.status(500).json({ 
-            message: "Failed to create session",
-            error: app.get('env') === 'development' ? loginErr.message : undefined
-          });
-        }
-      })(req, res);
-    } catch (error) {
-      console.error("Unexpected error during login:", error);
-      return res.status(500).json({ 
-        message: "An unexpected error occurred",
-        error: app.get('env') === 'development' ? error : undefined 
+        return res.json({
+          success: true,
+          message: "Login successful",
+          user: {
+            id: user.id,
+            username: user.username,
+            name: user.name,
+            quizCompleted: user.quizCompleted,
+            isGroupCreator: user.isGroupCreator,
+            avatar: user.avatar
+          }
+        });
       });
-    }
+    })(req, res, next);
   });
 
   app.post("/api/logout", (req, res) => {
