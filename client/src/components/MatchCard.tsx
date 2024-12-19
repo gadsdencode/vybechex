@@ -101,15 +101,22 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
 
       // Enhanced error handling with specific user feedback
       if (error instanceof Error) {
-        if (error.message.includes('Authentication required') || 
-            error.message.includes('Not authorized')) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('authentication required') || 
+            msg.includes('not authorized') ||
+            msg.includes('no auth token')) {
           title = "Authentication Required";
           description = "Please log in to connect with other users";
           redirect = true;
-        } else if (error.message.includes('Server configuration error')) {
+          // Force refresh auth state
+          queryClient.invalidateQueries({ queryKey: ['user'] });
+        } else if (msg.includes('invalid request data')) {
+          title = "Invalid Request";
+          description = "Unable to process match request. Please try again.";
+        } else if (msg.includes('server configuration error')) {
           title = "System Error";
           description = "We're experiencing technical difficulties. Please try again later.";
-        } else if (error.message.includes('Match request already exists')) {
+        } else if (msg.includes('match request already exists')) {
           title = "Request Exists";
           description = "You already have a pending request with this user";
         }

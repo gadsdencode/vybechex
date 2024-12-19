@@ -355,19 +355,28 @@ export function useMatches(): UseMatchesReturn {
 
   const connect = async ({ id }: { id: string }): Promise<Match> => {
     try {
+      // Input validation
       if (!id || isNaN(parseInt(id))) {
         throw new Error('Invalid user ID provided');
+      }
+
+      // Check authentication
+      const userId = getUserId();
+      if (!userId) {
+        throw new Error('Authentication required');
       }
 
       const response = await fetch('/api/matches', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${getAuthToken()}`
         },
         credentials: 'include',
         body: JSON.stringify({ 
-          userId2: parseInt(id)
+          targetUserId: parseInt(id),
+          userId: userId
         })
       });
 

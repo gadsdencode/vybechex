@@ -1,0 +1,49 @@
+No auth token found
+Matches response: 
+(4) [{…}, {…}, {…}, {…}]
+Match connection error: 
+Object {status: 400, data: {…}, errorMessage: "Invalid request data"}
+data: Object
+details: Array(1)
+message: "Invalid request data"
+success: false
+timestamp: "2024-12-19T17:11:08.137Z"
+[[Prototype]]: Object
+constructor: ƒ Object()
+hasOwnProperty: ƒ hasOwnProperty()
+isPrototypeOf: ƒ isPrototypeOf()
+propertyIsEnumerable: ƒ propertyIsEnumerable()
+toLocaleString: ƒ toLocaleString()
+toString: ƒ toString()
+valueOf: ƒ valueOf()
+__defineGetter__: ƒ __defineGetter__()
+__defineSetter__: ƒ __defineSetter__()
+__lookupGetter__: ƒ __lookupGetter__()
+__lookupSetter__: ƒ __lookupSetter__()
+__proto__: Object
+get __proto__: ƒ get __proto__()
+set __proto__: ƒ set __proto__()
+errorMessage: "Invalid request data"
+status: 400
+[[Prototype]]: Object
+
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400
+Match connection error: 
+Error {}
+message: "Invalid request data"
+stack: "Error: Invalid request data↵ at connect (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-matches.ts:259:15)↵ at async handleConnect (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/components/MatchCard.tsx:58:24)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
+
+Connect error: 
+Error {}
+message: "Invalid request data"
+stack: "Error: Invalid request data↵ at connect (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-matches.ts:259:15)↵ at async handleConnect (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/components/MatchCard.tsx:58:24)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
+
