@@ -359,14 +359,20 @@ export function useMatches(): UseMatchesReturn {
         throw new Error('Invalid user ID provided');
       }
 
+      const authToken = getAuthToken();
+      if (!authToken) {
+        throw new Error('Authentication required');
+      }
+
       const response = await fetch('/api/matches', {
         method: 'POST',
         headers: { 
           'Content-Type': 'application/json',
-          'Accept': 'application/json'
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${authToken}`
         },
         credentials: 'include',
-        body: JSON.stringify({ targetUserId: parseInt(id) })
+        body: JSON.stringify({ userId2: parseInt(id) })
       });
 
       let data;
@@ -379,11 +385,13 @@ export function useMatches(): UseMatchesReturn {
 
       if (!response.ok) {
         const errorMessage = data?.message || 'Failed to connect';
+        console.error('Server error:', data);
         throw new Error(errorMessage);
       }
 
       // Success handling
-      if (!data.data?.match) {
+      if (!data.success || !data.data?.match) {
+        console.error('Invalid response format:', data);
         throw new Error('Invalid response format from server');
       }
 
