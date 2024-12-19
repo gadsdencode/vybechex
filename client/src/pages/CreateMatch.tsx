@@ -33,21 +33,28 @@ export default function CreateMatchPage() {
         
         const match = await response.json();
         if (match) {
-          if (match.status === 'accepted') {
-            setLocation(`/chat/${matchId}`);
-            toast({
-              title: "Match exists",
-              description: "You already have a match with this user.",
-            });
-          } else {
-            setLocation('/matches');
-            toast({
-              title: "Pending match",
-              description: "You already have a pending match with this user.",
-            });
+            // Handle different match statuses
+            switch (match.status) {
+              case 'accepted':
+                setLocation(`/chat/${match.id}`);
+                toast({
+                  title: "Match Active",
+                  description: "Redirecting to your chat...",
+                });
+                break;
+              case 'requested':
+              case 'pending':
+                setLocation('/matches');
+                toast({
+                  title: "Match Request Pending",
+                  description: "You already have a pending request with this user.",
+                });
+                break;
+              default:
+                setLocation('/matches');
+            }
           }
-        }
-        return match;
+          return match;
       } catch (err) {
         throw err;
       }

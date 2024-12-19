@@ -175,7 +175,18 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
           <Button
             className="w-full"
             variant="default"
-            onClick={() => setLocation(`/chat/${match.id}`)}
+            onClick={() => {
+              if (match.status === 'accepted') {
+                setLocation(`/chat/${match.id}`);
+              } else {
+                toast({
+                  title: "Cannot Access Chat",
+                  description: "This match must be accepted first",
+                  variant: "destructive"
+                });
+                setLocation('/matches');
+              }
+            }}
           >
             <MessageCircle className="mr-2 h-4 w-4" />
             Start Chat
