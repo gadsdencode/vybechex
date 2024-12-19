@@ -63,26 +63,24 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
       switch (response.status) {
         case 'accepted':
           toast({
-            title: "Match Connected! 🎉",
+            title: "Match Connected!",
             description: "You can now start chatting",
             variant: "default"
           });
-          setLocation(`/chat/${response.id}`);
+          // Ensure we have a valid match ID before redirecting
+          if (response.id) {
+            setLocation(`/chat/${response.id}`);
+          } else {
+            console.error('Missing match ID in response:', response);
+            setLocation('/matches');
+          }
           break;
         
         case 'requested':
-          toast({
-            title: "Request Sent ✨",
-            description: "We'll notify you when they respond",
-            variant: "default"
-          });
-          setLocation('/matches');
-          break;
-        
         case 'pending':
           toast({
-            title: "Request Pending ⏳",
-            description: "Your request is still waiting for a response",
+            title: response.status === 'requested' ? "Request Sent" : "Request Pending",
+            description: "We'll notify you when they respond",
             variant: "default"
           });
           setLocation('/matches');
@@ -90,34 +88,42 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
         
         default:
           console.warn('Unexpected match status:', response.status);
-          toast({
-            title: "Status Updated",
-            description: "Match status has been updated",
-            variant: "default"
-          });
+          // Query the match status again to ensure we have the latest data
+          queryClient.invalidateQueries({ queryKey: ['matches'] });
           setLocation('/matches');
       }
     } catch (error) {
       console.error('Connect error:', error);
       
-      // Enhanced error handling with specific messages
-      const errorMessage = error instanceof Error ? error.message : "Failed to connect with match";
+      let title = "Connection Failed";
+      let description = error instanceof Error ? error.message : "Failed to connect with match";
+      let redirect = false;
+
+      // Enhanced error handling with specific user feedback
+      if (error instanceof Error) {
+        if (error.message.includes('Authentication required') || 
+            error.message.includes('Not authorized')) {
+          title = "Authentication Required";
+          description = "Please log in to connect with other users";
+          redirect = true;
+        } else if (error.message.includes('Server configuration error')) {
+          title = "System Error";
+          description = "We're experiencing technical difficulties. Please try again later.";
+        } else if (error.message.includes('Match request already exists')) {
+          title = "Request Exists";
+          description = "You already have a pending request with this user";
+        }
+      }
       
       toast({
-        title: "Connection Failed",
-        description: errorMessage,
+        title,
+        description,
         variant: "destructive",
         duration: 5000
       });
 
-      // Handle specific error cases
-      if (error instanceof Error) {
-        if (error.message.includes('Authentication required') || 
-            error.message.includes('Not authorized')) {
-          setLocation('/login');
-        } else if (error.message.includes('Match request already exists')) {
-          setLocation('/matches');
-        }
+      if (redirect) {
+        setLocation('/login');
       }
     } finally {
       setIsConnecting(false);

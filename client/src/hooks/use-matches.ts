@@ -367,7 +367,7 @@ export function useMatches(): UseMatchesReturn {
         },
         credentials: 'include',
         body: JSON.stringify({ 
-          targetUserId: parseInt(id)
+          userId2: parseInt(id)
         })
       });
 
@@ -389,6 +389,10 @@ export function useMatches(): UseMatchesReturn {
 
         if (response.status === 401) {
           throw new Error('Authentication required');
+        } else if (response.status === 500 && data?.details?.code === '42703') {
+          // Handle the specific database column error
+          console.error('Database schema error:', data.details);
+          throw new Error('Server configuration error. Please try again later.');
         }
         
         throw new Error(errorMessage);
@@ -405,12 +409,10 @@ export function useMatches(): UseMatchesReturn {
       queryClient.invalidateQueries({ queryKey: ['matches'] });
       queryClient.invalidateQueries({ queryKey: ['match-requests'] });
 
-      let type = data.data?.type || 'created';
-      if (match.status === 'accepted') {
-        type = 'accepted';
-      } else if (match.status === 'requested' || match.status === 'pending') {
-        type = 'pending';
-      }
+      // Determine the match type based on status
+      const type = match.status === 'accepted' ? 'accepted' :
+                  (match.status === 'requested' || match.status === 'pending') ? 'pending' :
+                  'created';
 
       // Show appropriate status messages
       const toastMessages = {
