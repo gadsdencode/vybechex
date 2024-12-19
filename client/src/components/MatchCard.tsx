@@ -145,7 +145,16 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
           </Button>
         );
       case 'rejected':
-        return null;
+        return (
+          <Button
+            className="w-full"
+            variant="destructive"
+            disabled
+          >
+            <User className="mr-2 h-4 w-4" />
+            Not a Match
+          </Button>
+        );
       default:
         return (
           <Button

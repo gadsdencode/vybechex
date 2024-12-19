@@ -18,7 +18,7 @@ export interface PersonalityTraits {
   sociability: number;
 }
 
-type MatchStatus = 'requested' | 'pending' | 'accepted' | 'rejected';
+type MatchStatus = 'none' | 'requested' | 'pending' | 'accepted' | 'rejected';
 
 export interface ExtendedUser {
   id: number;
@@ -39,7 +39,7 @@ export interface Match {
   personalityTraits: Record<string, number>;
   avatar?: string;
   createdAt: string;
-  status: 'requested' | 'accepted' | 'rejected';
+  status: MatchStatus;
   score?: number;
   compatibilityScore?: number;
   matchExplanation?: string;
