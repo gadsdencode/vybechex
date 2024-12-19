@@ -65,10 +65,10 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
 
   const getStatusBadge = () => {
     switch (match.status) {
+      case 'pending':
+        return <Badge variant="secondary">Pending Confirmation</Badge>;
       case 'requested':
         return <Badge variant="secondary">Request Sent</Badge>;
-      case 'requested':
-        return <Badge variant="destructive">Pending</Badge>;
       case 'accepted':
         return <Badge variant="default">Connected</Badge>;
       case 'rejected':
@@ -80,7 +80,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
 
   const getActionButton = () => {
     switch (match.status) {
-      case 'requested':
+      case 'pending':
         return (
           <Button
             className="w-full"
@@ -90,7 +90,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
             {isConnecting ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Connecting...
+                Confirming...
               </>
             ) : (
               <>
@@ -107,6 +107,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
             variant="secondary"
             disabled
           >
+            <UserPlus className="mr-2 h-4 w-4" />
             Request Sent
           </Button>
         );
