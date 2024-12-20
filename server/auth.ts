@@ -43,12 +43,28 @@ declare global {
   }
 }
 
-export function setupAuth(app: Express) {
+export async function setupAuth(app: Express) {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL must be set for auth to work");
   }
 
+  // Verify database connection
+  try {
+    const [testUser] = await db
+      .select({ id: users.id })
+      .from(users)
+      .limit(1);
+    console.log("Database connection verified");
+  } catch (error) {
+    console.error("Database connection failed:", error);
+    throw new Error("Failed to connect to database");
+  }
+
   const MemoryStore = createMemoryStore(session);
+  const sessionStore = new MemoryStore({
+    checkPeriod: 86400000, // prune expired entries every 24h
+  });
+
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
     resave: false,
@@ -60,9 +76,7 @@ export function setupAuth(app: Express) {
       httpOnly: true,
       path: '/'
     },
-    store: new MemoryStore({
-      checkPeriod: 86400000, // prune expired entries every 24h
-    }),
+    store: sessionStore,
   };
 
   if (app.get("env") === "production") {
@@ -76,6 +90,11 @@ export function setupAuth(app: Express) {
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
+
+  // Setup cleanup handler for graceful shutdown
+  process.on('SIGTERM', () => {
+    sessionStore.stopInterval();
+  });
 
   passport.use(
     new LocalStrategy(async (username, password, done) => {
@@ -174,11 +193,7 @@ export function setupAuth(app: Express) {
           message: "Registration successful",
           user: { 
             id: newUser.id, 
-            username: newUser.username,
-            name: newUser.name,
-            quizCompleted: newUser.quizCompleted,
-            isGroupCreator: newUser.isGroupCreator,
-            avatar: newUser.avatar
+            username: newUser.username 
           },
         });
       });
@@ -227,11 +242,7 @@ export function setupAuth(app: Express) {
           message: "Login successful",
           user: {
             id: user.id,
-            username: user.username,
-            name: user.name,
-            quizCompleted: user.quizCompleted,
-            isGroupCreator: user.isGroupCreator,
-            avatar: user.avatar
+            username: user.username
           }
         });
       });
@@ -256,11 +267,12 @@ export function setupAuth(app: Express) {
 
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
-      console.log("Authenticated user:", req.user);
       return res.json(req.user);
     }
 
-    console.log("User not authenticated");
-    res.status(401).send("Not logged in");
+    res.status(401).json({
+      success: false,
+      message: "Not logged in"
+    });
   });
 }

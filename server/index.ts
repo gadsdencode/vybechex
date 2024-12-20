@@ -9,66 +9,67 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-// Request logging middleware
-app.use((req, res, next) => {
-  const start = Date.now();
-  const path = req.path;
-  let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-  // Capture JSON responses for logging
-  const originalResJson = res.json;
-  res.json = function (bodyJson, ...args) {
-    capturedJsonResponse = bodyJson;
-    return originalResJson.apply(res, [bodyJson, ...args]);
-  };
-
-  res.on("finish", () => {
-    const duration = Date.now() - start;
-    if (path.startsWith("/api")) {
-      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-      if (capturedJsonResponse) {
-        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-      }
-      if (logLine.length > 80) {
-        logLine = logLine.slice(0, 79) + "…";
-      }
-      log(logLine);
-    }
-  });
-
-  next();
-});
-
-// Initialize authentication before routes
-setupAuth(app);
-
-// Initialize routes after auth is setup
-const server = registerRoutes(app);
-
-// Global error handler - must be after routes but before Vite setup
-app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-  const status = err.status || err.statusCode || 500;
-  const message = err.message || "Internal Server Error";
-
-  // Log error with context for debugging
-  console.error('Server Error:', {
-    status,
-    message,
-    stack: err.stack,
-    timestamp: new Date().toISOString()
-  });
-
-  // Send error response
-  res.status(status).json({
-    success: false,
-    message: app.get('env') === 'development' ? message : 'Internal Server Error',
-    ...(app.get('env') === 'development' && { stack: err.stack })
-  });
-});
-
 // Start the server with proper error handling
 (async () => {
   try {
+    // Initialize authentication before any routes
+    await setupAuth(app);
+    console.log("Authentication system initialized successfully");
+
+    // Request logging middleware - after auth setup to include user context
+    app.use((req, res, next) => {
+      const start = Date.now();
+      const path = req.path;
+      let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+      // Capture JSON responses for logging
+      const originalResJson = res.json;
+      res.json = function (bodyJson, ...args) {
+        capturedJsonResponse = bodyJson;
+        return originalResJson.apply(res, [bodyJson, ...args]);
+      };
+
+      res.on("finish", () => {
+        const duration = Date.now() - start;
+        if (path.startsWith("/api")) {
+          let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+          if (capturedJsonResponse) {
+            logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+          }
+          if (logLine.length > 80) {
+            logLine = logLine.slice(0, 79) + "…";
+          }
+          log(logLine);
+        }
+      });
+
+      next();
+    });
+
+    // Initialize routes after auth is setup
+    const server = registerRoutes(app);
+
+    // Global error handler - must be after routes but before Vite setup
+    app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+
+      // Log error with context for debugging
+      console.error('Server Error:', {
+        status,
+        message,
+        stack: err.stack,
+        timestamp: new Date().toISOString()
+      });
+
+      // Send error response
+      res.status(status).json({
+        success: false,
+        message: app.get('env') === 'development' ? message : 'Internal Server Error',
+        ...(app.get('env') === 'development' && { stack: err.stack })
+      });
+    });
+
     // Setup development or production mode
     if (app.get("env") === "development") {
       await setupVite(app, server);
