@@ -8,6 +8,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Send, AlertCircle, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
+import { useUser } from "@/hooks/use-user";
 
 interface Message {
   id: number;
@@ -23,10 +24,9 @@ interface Message {
 
 interface ChatWindowProps {
   matchId: number;
-  userId: number;
 }
 
-export function ChatWindow({ matchId, userId }: ChatWindowProps) {
+export function ChatWindow({ matchId }: ChatWindowProps) {
   const [message, setMessage] = useState("");
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
@@ -37,21 +37,28 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
   const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
   const maxReconnectAttempts = 5;
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  const { user } = useUser();
+  const sessionIdRef = useRef<string>(crypto.randomUUID());
 
   // Fetch existing messages
   const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[]>({
     queryKey: [`/api/matches/${matchId}/messages`],
+    enabled: !!user, // Only fetch when user is authenticated
   });
 
   // Connect to WebSocket with reconnection logic
   const connectWebSocket = () => {
-    if (reconnectAttempts >= maxReconnectAttempts) {
-      setConnectionError("Unable to connect to chat server after multiple attempts");
+    if (!user || reconnectAttempts >= maxReconnectAttempts) {
+      setConnectionError(
+        !user 
+          ? "Authentication required" 
+          : "Unable to connect to chat server after multiple attempts"
+      );
       return;
     }
 
     const ws = new WebSocket(
-      `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat?userId=${userId}&matchId=${matchId}`
+      `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat?userId=${user.id}&matchId=${matchId}&sessionId=${sessionIdRef.current}`
     );
 
     ws.onopen = () => {
@@ -84,14 +91,14 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
       setConnectionError("Connection error occurred");
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       setIsConnecting(true);
-      // Attempt to reconnect after a delay
-      if (reconnectAttempts < maxReconnectAttempts) {
+      // Attempt to reconnect after a delay with exponential backoff
+      if (reconnectAttempts < maxReconnectAttempts && event.code !== 1000) {
         reconnectTimeoutRef.current = setTimeout(() => {
           setReconnectAttempts(prev => prev + 1);
           connectWebSocket();
-        }, 2000 * Math.pow(2, reconnectAttempts)); // Exponential backoff
+        }, 2000 * Math.pow(2, reconnectAttempts));
       }
     };
 
@@ -99,17 +106,19 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
   };
 
   useEffect(() => {
-    connectWebSocket();
+    if (user) {
+      connectWebSocket();
+    }
 
     return () => {
       if (socket) {
-        socket.close();
+        socket.close(1000, "Component unmounting");
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
-  }, [matchId, userId]);
+  }, [matchId, user]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -119,7 +128,9 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
   }, [messages]);
 
   const handleSendMessage = () => {
-    if (!message.trim() || !socket || socket.readyState !== WebSocket.OPEN) return;
+    if (!message.trim() || !socket || socket.readyState !== WebSocket.OPEN || !user) {
+      return;
+    }
 
     try {
       socket.send(JSON.stringify({
@@ -136,6 +147,20 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
       });
     }
   };
+
+  if (!user) {
+    return (
+      <Card className="p-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Authentication Required</AlertTitle>
+          <AlertDescription>
+            Please log in to access the chat.
+          </AlertDescription>
+        </Alert>
+      </Card>
+    );
+  }
 
   if (connectionError) {
     return (
@@ -170,12 +195,12 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
             <div
               key={msg.id}
               className={`flex ${
-                msg.sender.id === userId ? "justify-end" : "justify-start"
+                msg.sender.id === user.id ? "justify-end" : "justify-start"
               }`}
             >
               <div
                 className={`max-w-[80%] rounded-lg p-3 ${
-                  msg.sender.id === userId
+                  msg.sender.id === user.id
                     ? "bg-primary text-primary-foreground"
                     : "bg-muted"
                 }`}

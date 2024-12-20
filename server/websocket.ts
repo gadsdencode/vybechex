@@ -16,15 +16,17 @@ interface ExtendedWebSocket extends WebSocket {
   userId?: number;
   matchId?: number;
   isAlive: boolean;
+  sessionId?: string;
 }
 
-// Store active connections
+// Store active connections with session tracking
 const connections = new Map<number, ExtendedWebSocket[]>();
+const sessionConnections = new Map<string, ExtendedWebSocket>();
 
 export function setupWebSocketServer(server: Server) {
   const wss = new WebSocketServer({ noServer: true });
 
-  // Handle WebSocket upgrade
+  // Handle WebSocket upgrade with session verification
   server.on('upgrade', async (request, socket, head) => {
     try {
       // Skip Vite HMR connections
@@ -37,8 +39,9 @@ export function setupWebSocketServer(server: Server) {
       if (pathname === '/ws/chat') {
         const userId = parseInt(query.userId as string);
         const matchId = parseInt(query.matchId as string);
+        const sessionId = query.sessionId as string;
 
-        if (isNaN(userId) || isNaN(matchId)) {
+        if (isNaN(userId) || isNaN(matchId) || !sessionId) {
           socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n');
           socket.destroy();
           return;
@@ -67,11 +70,26 @@ export function setupWebSocketServer(server: Server) {
             return;
           }
 
+          // Close existing connection for this session if it exists
+          const existingConnection = sessionConnections.get(sessionId);
+          if (existingConnection) {
+            existingConnection.close(1000, 'New connection established');
+          }
+
           wss.handleUpgrade(request, socket, head, (ws) => {
             const extWs = ws as ExtendedWebSocket;
             extWs.userId = userId;
             extWs.matchId = matchId;
+            extWs.sessionId = sessionId;
             extWs.isAlive = true;
+
+            // Store connection with session tracking
+            sessionConnections.set(sessionId, extWs);
+            if (!connections.has(matchId)) {
+              connections.set(matchId, []);
+            }
+            connections.get(matchId)?.push(extWs);
+
             wss.emit('connection', extWs);
           });
         } catch (error) {
@@ -92,6 +110,9 @@ export function setupWebSocketServer(server: Server) {
     const clients = Array.from(wss.clients) as ExtendedWebSocket[];
     clients.forEach((ws) => {
       if (!ws.isAlive) {
+        if (ws.sessionId) {
+          sessionConnections.delete(ws.sessionId);
+        }
         return ws.terminate();
       }
       ws.isAlive = false;
@@ -105,17 +126,11 @@ export function setupWebSocketServer(server: Server) {
 
   // Handle new connections
   wss.on('connection', (ws: ExtendedWebSocket) => {
-    const { userId, matchId } = ws;
-    if (!userId || !matchId) {
-      ws.close(1008, 'Missing user or match information');
+    const { userId, matchId, sessionId } = ws;
+    if (!userId || !matchId || !sessionId) {
+      ws.close(1008, 'Missing session information');
       return;
     }
-
-    // Store connection
-    if (!connections.has(matchId)) {
-      connections.set(matchId, []);
-    }
-    connections.get(matchId)?.push(ws);
 
     // Setup pong handler for heartbeat
     ws.on('pong', () => {
@@ -127,6 +142,16 @@ export function setupWebSocketServer(server: Server) {
       try {
         const message = JSON.parse(data.toString()) as ChatMessage;
         if (message.type !== 'message') return;
+
+        // Verify the message is for the correct match
+        if (message.matchId !== matchId) {
+          ws.send(JSON.stringify({
+            type: 'error',
+            message: 'Invalid match ID',
+            timestamp: new Date().toISOString()
+          }));
+          return;
+        }
 
         // Store message in database
         const [savedMessage] = await db
@@ -163,6 +188,9 @@ export function setupWebSocketServer(server: Server) {
     // Handle client disconnect
     ws.on('close', () => {
       ws.isAlive = false;
+      if (sessionId) {
+        sessionConnections.delete(sessionId);
+      }
       const matchConnections = connections.get(matchId);
       if (matchConnections) {
         const index = matchConnections.indexOf(ws);

@@ -24,16 +24,17 @@ const sendSuccess = (res: Response, data: any, message?: string) => {
   return res.json({
     success: true,
     data,
-    ...(message && { message })
+    ...(message && { message }),
+    timestamp: new Date().toISOString()
   });
 };
 
 // Match request validation schema
 const matchRequestSchema = z.object({
-  targetUserId: z.number().positive("User ID must be a positive number"),
+  targetUserId: z.number().int().positive("User ID must be a positive integer"),
 });
 
-// Auth middleware
+// Auth middleware with session verification
 const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   if (!req.isAuthenticated()) {
     return sendError(res, 401, "Authentication required");
@@ -42,6 +43,10 @@ const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   const user = req.user as SelectUser;
   if (!user?.id) {
     return sendError(res, 401, "Invalid session");
+  }
+
+  if (!req.session || !req.session.passport) {
+    return sendError(res, 401, "Session expired");
   }
 
   next();
@@ -107,30 +112,30 @@ export function registerRoutes(app: Express): Server {
           avatar: users.avatar,
         }
       })
-      .from(matches)
-      .where(
-        and(
-          or(
-            eq(matches.userId1, user.id),
-            eq(matches.userId2, user.id)
-          ),
-          eq(matches.status, 'accepted')
-        )
-      )
-      .innerJoin(
-        users,
-        or(
+        .from(matches)
+        .where(
           and(
-            eq(matches.userId1, users.id),
-            ne(users.id, user.id)
-          ),
-          and(
-            eq(matches.userId2, users.id),
-            ne(users.id, user.id)
+            or(
+              eq(matches.userId1, user.id),
+              eq(matches.userId2, user.id)
+            ),
+            eq(matches.status, 'accepted')
           )
         )
-      )
-      .orderBy(desc(matches.lastActivityAt));
+        .innerJoin(
+          users,
+          or(
+            and(
+              eq(matches.userId1, users.id),
+              ne(users.id, user.id)
+            ),
+            and(
+              eq(matches.userId2, users.id),
+              ne(users.id, user.id)
+            )
+          )
+        )
+        .orderBy(desc(matches.lastActivityAt));
 
       return sendSuccess(res, userMatches);
     } catch (error) {
@@ -217,9 +222,9 @@ export function registerRoutes(app: Express): Server {
         })
         .returning();
 
-      return sendSuccess(res, { 
+      return sendSuccess(res, {
         ...newMatch,
-        verificationCode 
+        verificationCode
       }, "Match request created successfully");
     } catch (error) {
       console.error("Error creating match:", error);
@@ -288,7 +293,7 @@ export function registerRoutes(app: Express): Server {
       // Accept the match
       const [updatedMatch] = await db
         .update(matches)
-        .set({ 
+        .set({
           status: 'accepted',
           lastActivityAt: new Date()
         })
@@ -332,7 +337,7 @@ export function registerRoutes(app: Express): Server {
       // Reject the match
       const [updatedMatch] = await db
         .update(matches)
-        .set({ 
+        .set({
           status: 'rejected',
           lastActivityAt: new Date()
         })

@@ -80,7 +80,8 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
     if (!req.isAuthenticated()) {
       return res.status(401).json({ 
         success: false, 
-        message: "Authentication required" 
+        message: "Authentication required",
+        timestamp: new Date().toISOString()
       });
     }
 
@@ -90,18 +91,12 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
     if (isNaN(matchId)) {
       return res.status(400).json({ 
         success: false, 
-        message: "Invalid match ID" 
+        message: "Invalid match ID",
+        timestamp: new Date().toISOString()
       });
     }
 
-    // Rate limit check for match requests
-    if (req.method === 'POST' && !checkMatchRequestLimit(user.id)) {
-      return res.status(429).json({
-        success: false,
-        message: "Too many match requests. Please try again later."
-      });
-    }
-
+    // Verify match exists and user has access
     const [match] = await db
       .select()
       .from(matches)
@@ -120,17 +115,20 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
     if (!match) {
       return res.status(404).json({ 
         success: false, 
-        message: "Match not found or not accessible" 
+        message: "Match not found or access denied",
+        timestamp: new Date().toISOString()
       });
     }
 
+    // Store match data in request for route handlers
     req.matchData = match;
     next();
   } catch (error) {
     console.error('Match verification error:', error);
-    res.status(500).json({ 
+    return res.status(500).json({ 
       success: false, 
-      message: "Failed to verify match access" 
+      message: "Failed to verify match access",
+      timestamp: new Date().toISOString()
     });
   }
 };
@@ -157,10 +155,8 @@ export async function setupAuth(app: Express) {
     stale: false, // Delete expired sessions immediately
     ttl: 24 * 60 * 60 * 1000, // 24 hours
     dispose: (key: string, sess: session.SessionData) => {
-      // Cleanup any associated match requests on session expiry
-      if (sess.passport?.user) {
-        matchRequestLimits.delete(sess.passport.user);
-      }
+      // Cleanup any resources when session expires
+      console.log(`Session ${key} expired`);
     }
   });
 
@@ -344,17 +340,12 @@ export async function setupAuth(app: Express) {
   });
 
   app.post("/api/logout", (req, res) => {
-    const userId = req.user?.id;
     req.logout((err) => {
       if (err) {
         return res.status(500).json({
           success: false,
           message: "Logout failed"
         });
-      }
-
-      if (userId) {
-        matchRequestLimits.delete(userId);
       }
 
       res.json({ 
