@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from "react";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send } from "lucide-react";
+import { Send, AlertCircle, Loader2 } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 
 interface Message {
   id: number;
@@ -28,22 +29,35 @@ interface ChatWindowProps {
 export function ChatWindow({ matchId, userId }: ChatWindowProps) {
   const [message, setMessage] = useState("");
   const [socket, setSocket] = useState<WebSocket | null>(null);
+  const [isConnecting, setIsConnecting] = useState(true);
+  const [connectionError, setConnectionError] = useState<string | null>(null);
   const { toast } = useToast();
   const queryClient = useQueryClient();
   const scrollRef = useRef<HTMLDivElement>(null);
+  const reconnectTimeoutRef = useRef<NodeJS.Timeout>();
+  const maxReconnectAttempts = 5;
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   // Fetch existing messages
-  const { data: messages = [] } = useQuery<Message[]>({
+  const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[]>({
     queryKey: [`/api/matches/${matchId}/messages`],
   });
 
-  // Connect to WebSocket
-  useEffect(() => {
+  // Connect to WebSocket with reconnection logic
+  const connectWebSocket = () => {
+    if (reconnectAttempts >= maxReconnectAttempts) {
+      setConnectionError("Unable to connect to chat server after multiple attempts");
+      return;
+    }
+
     const ws = new WebSocket(
       `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws/chat?userId=${userId}&matchId=${matchId}`
     );
 
     ws.onopen = () => {
+      setIsConnecting(false);
+      setConnectionError(null);
+      setReconnectAttempts(0);
       console.log('Connected to chat server');
     };
 
@@ -57,24 +71,45 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
           description: data.message,
           variant: "destructive",
         });
+      } else if (data.type === 'connected') {
+        toast({
+          title: "Connected",
+          description: data.message,
+        });
       }
     };
 
     ws.onerror = (error) => {
       console.error('WebSocket error:', error);
-      toast({
-        title: "Connection Error",
-        description: "Failed to connect to chat server",
-        variant: "destructive",
-      });
+      setConnectionError("Connection error occurred");
+    };
+
+    ws.onclose = () => {
+      setIsConnecting(true);
+      // Attempt to reconnect after a delay
+      if (reconnectAttempts < maxReconnectAttempts) {
+        reconnectTimeoutRef.current = setTimeout(() => {
+          setReconnectAttempts(prev => prev + 1);
+          connectWebSocket();
+        }, 2000 * Math.pow(2, reconnectAttempts)); // Exponential backoff
+      }
     };
 
     setSocket(ws);
+  };
+
+  useEffect(() => {
+    connectWebSocket();
 
     return () => {
-      ws.close();
+      if (socket) {
+        socket.close();
+      }
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
     };
-  }, [matchId, userId, queryClient, toast]);
+  }, [matchId, userId]);
 
   // Auto-scroll to bottom when new messages arrive
   useEffect(() => {
@@ -84,7 +119,7 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
   }, [messages]);
 
   const handleSendMessage = () => {
-    if (!message.trim() || !socket) return;
+    if (!message.trim() || !socket || socket.readyState !== WebSocket.OPEN) return;
 
     try {
       socket.send(JSON.stringify({
@@ -102,8 +137,33 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
     }
   };
 
+  if (connectionError) {
+    return (
+      <Card className="p-4">
+        <Alert variant="destructive">
+          <AlertCircle className="h-4 w-4" />
+          <AlertTitle>Connection Error</AlertTitle>
+          <AlertDescription>
+            {connectionError}
+          </AlertDescription>
+        </Alert>
+      </Card>
+    );
+  }
+
   return (
     <Card className="flex flex-col h-[600px]">
+      {(isConnecting || isLoadingMessages) && (
+        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">
+              {isConnecting ? "Connecting to chat..." : "Loading messages..."}
+            </p>
+          </div>
+        </div>
+      )}
+
       <ScrollArea ref={scrollRef} className="flex-1 p-4">
         <div className="space-y-4">
           {messages.map((msg) => (
@@ -143,6 +203,7 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             placeholder="Type your message..."
+            disabled={!socket || socket.readyState !== WebSocket.OPEN}
             onKeyDown={(e) => {
               if (e.key === "Enter" && !e.shiftKey) {
                 e.preventDefault();
@@ -150,7 +211,11 @@ export function ChatWindow({ matchId, userId }: ChatWindowProps) {
               }
             }}
           />
-          <Button onClick={handleSendMessage} size="icon">
+          <Button 
+            onClick={handleSendMessage} 
+            size="icon"
+            disabled={!socket || socket.readyState !== WebSocket.OPEN}
+          >
             <Send className="h-4 w-4" />
           </Button>
         </div>

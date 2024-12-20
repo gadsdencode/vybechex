@@ -54,6 +54,40 @@ export function registerRoutes(app: Express): Server {
   // Setup WebSocket server
   setupWebSocketServer(httpServer);
 
+  // Get match requests
+  app.get("/api/matches/requests", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as SelectUser;
+      const matchRequests = await db
+        .select({
+          id: matches.id,
+          userId1: matches.userId1,
+          status: matches.status,
+          createdAt: matches.createdAt,
+          requester: {
+            id: users.id,
+            username: users.username,
+            name: users.name,
+            avatar: users.avatar,
+          }
+        })
+        .from(matches)
+        .where(
+          and(
+            eq(matches.userId2, user.id),
+            eq(matches.status, 'requested')
+          )
+        )
+        .innerJoin(users, eq(matches.userId1, users.id))
+        .orderBy(desc(matches.createdAt));
+
+      return sendSuccess(res, matchRequests);
+    } catch (error) {
+      console.error("Error fetching match requests:", error);
+      return sendError(res, 500, "Failed to fetch match requests", error);
+    }
+  });
+
   // Get matches list
   app.get("/api/matches", requireAuth, async (req: Request, res: Response) => {
     try {
@@ -122,7 +156,7 @@ export function registerRoutes(app: Express): Server {
         return sendError(res, 400, "Cannot create a match with yourself");
       }
 
-      // Check if target user exists
+      // Check if target user exists and is active
       const [targetUser] = await db
         .select()
         .from(users)
@@ -133,39 +167,60 @@ export function registerRoutes(app: Express): Server {
         return sendError(res, 404, "Target user not found");
       }
 
-      // Check for existing match
+      // Check for existing active match or pending request
       const [existingMatch] = await db
         .select()
         .from(matches)
         .where(
-          or(
-            and(
-              eq(matches.userId1, user.id),
-              eq(matches.userId2, targetUserId)
+          and(
+            or(
+              and(
+                eq(matches.userId1, user.id),
+                eq(matches.userId2, targetUserId)
+              ),
+              and(
+                eq(matches.userId1, targetUserId),
+                eq(matches.userId2, user.id)
+              )
             ),
-            and(
-              eq(matches.userId1, targetUserId),
-              eq(matches.userId2, user.id)
+            or(
+              eq(matches.status, 'accepted'),
+              and(
+                eq(matches.status, 'requested'),
+                eq(matches.userId1, user.id)
+              )
             )
           )
         )
         .limit(1);
 
       if (existingMatch) {
-        return sendSuccess(res, existingMatch, "Match already exists");
+        if (existingMatch.status === 'accepted') {
+          return sendError(res, 400, "An active match already exists with this user");
+        } else {
+          return sendError(res, 400, "You already have a pending request with this user");
+        }
       }
 
-      // Create new match
+      // Create new match request with verification
+      const verificationCode = Math.random().toString(36).substring(2, 8).toUpperCase();
       const [newMatch] = await db
         .insert(matches)
         .values({
           userId1: user.id,
           userId2: targetUserId,
           status: 'requested',
+          matchType: 'request',
+          verificationCode,
+          createdAt: new Date(),
+          lastActivityAt: new Date(),
         })
         .returning();
 
-      return sendSuccess(res, newMatch, "Match request created");
+      return sendSuccess(res, { 
+        ...newMatch,
+        verificationCode 
+      }, "Match request created successfully");
     } catch (error) {
       console.error("Error creating match:", error);
       return sendError(res, 500, "Failed to create match", error);
@@ -244,6 +299,50 @@ export function registerRoutes(app: Express): Server {
     } catch (error) {
       console.error("Error accepting match:", error);
       return sendError(res, 500, "Failed to accept match", error);
+    }
+  });
+
+  // Reject match request
+  app.post("/api/matches/:matchId/reject", requireAuth, async (req: Request, res: Response) => {
+    try {
+      const user = req.user as SelectUser;
+      const matchId = parseInt(req.params.matchId);
+
+      if (isNaN(matchId)) {
+        return sendError(res, 400, "Invalid match ID");
+      }
+
+      // Verify match exists and user is the target
+      const [match] = await db
+        .select()
+        .from(matches)
+        .where(
+          and(
+            eq(matches.id, matchId),
+            eq(matches.userId2, user.id),
+            eq(matches.status, 'requested')
+          )
+        )
+        .limit(1);
+
+      if (!match) {
+        return sendError(res, 404, "Match request not found or cannot be rejected");
+      }
+
+      // Reject the match
+      const [updatedMatch] = await db
+        .update(matches)
+        .set({ 
+          status: 'rejected',
+          lastActivityAt: new Date()
+        })
+        .where(eq(matches.id, matchId))
+        .returning();
+
+      return sendSuccess(res, updatedMatch, "Match rejected successfully");
+    } catch (error) {
+      console.error("Error rejecting match:", error);
+      return sendError(res, 500, "Failed to reject match", error);
     }
   });
 

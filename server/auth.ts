@@ -12,7 +12,6 @@ import { z } from "zod";
 
 const scryptAsync = promisify(scrypt);
 
-// Add login schema
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
   password: z.string().min(1, "Password is required"),
@@ -36,7 +35,6 @@ export const crypto = {
   },
 };
 
-// extend express request object with our schema
 declare global {
   namespace Express {
     interface User extends SelectUser {}
@@ -46,7 +44,37 @@ declare global {
   }
 }
 
-// Match verification middleware
+// Extend express-session to include passport
+declare module 'express-session' {
+  interface SessionData {
+    passport: {
+      user: number;
+    };
+  }
+}
+
+// Rate limiting for match requests
+const matchRequestLimits = new Map<number, { count: number; resetTime: number }>();
+const MAX_REQUESTS_PER_HOUR = 20;
+const HOUR_IN_MS = 3600000;
+
+const checkMatchRequestLimit = (userId: number): boolean => {
+  const now = Date.now();
+  const userLimit = matchRequestLimits.get(userId);
+
+  if (!userLimit || now > userLimit.resetTime) {
+    matchRequestLimits.set(userId, { count: 1, resetTime: now + HOUR_IN_MS });
+    return true;
+  }
+
+  if (userLimit.count >= MAX_REQUESTS_PER_HOUR) {
+    return false;
+  }
+
+  userLimit.count++;
+  return true;
+};
+
 export const verifyMatchAccess = async (req: Request, res: Response, next: NextFunction) => {
   try {
     if (!req.isAuthenticated()) {
@@ -66,7 +94,14 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
       });
     }
 
-    // Verify match exists and user is part of it
+    // Rate limit check for match requests
+    if (req.method === 'POST' && !checkMatchRequestLimit(user.id)) {
+      return res.status(429).json({
+        success: false,
+        message: "Too many match requests. Please try again later."
+      });
+    }
+
     const [match] = await db
       .select()
       .from(matches)
@@ -89,7 +124,6 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
       });
     }
 
-    // Add match to request for route handlers
     req.matchData = match;
     next();
   } catch (error) {
@@ -106,7 +140,6 @@ export async function setupAuth(app: Express) {
     throw new Error("DATABASE_URL must be set for auth to work");
   }
 
-  // Verify database connection
   try {
     const [testUser] = await db
       .select({ id: users.id })
@@ -121,12 +154,21 @@ export async function setupAuth(app: Express) {
   const MemoryStore = createMemoryStore(session);
   const sessionStore = new MemoryStore({
     checkPeriod: 86400000, // prune expired entries every 24h
+    stale: false, // Delete expired sessions immediately
+    ttl: 24 * 60 * 60 * 1000, // 24 hours
+    dispose: (key: string, sess: session.SessionData) => {
+      // Cleanup any associated match requests on session expiry
+      if (sess.passport?.user) {
+        matchRequestLimits.delete(sess.passport.user);
+      }
+    }
   });
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
     resave: false,
     saveUninitialized: false,
+    rolling: true, // Reset expiration on each request
     cookie: {
       maxAge: 24 * 60 * 60 * 1000, // 24 hours
       secure: false, // Will be set to true in production
@@ -135,6 +177,7 @@ export async function setupAuth(app: Express) {
       path: '/'
     },
     store: sessionStore,
+    name: 'sid', // Custom session ID name
   };
 
   if (app.get("env") === "production") {
@@ -144,12 +187,11 @@ export async function setupAuth(app: Express) {
     }
   }
 
-  // Setup session middleware before passport
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
 
-  // Setup cleanup handler for graceful shutdown
+  // Cleanup handler for graceful shutdown
   process.on('SIGTERM', () => {
     sessionStore.stopInterval();
   });
@@ -201,7 +243,6 @@ export async function setupAuth(app: Express) {
     }
   });
 
-  // Auth routes
   app.post("/api/register", async (req, res, next) => {
     try {
       const result = insertUserSchema.safeParse(req.body);
@@ -214,7 +255,6 @@ export async function setupAuth(app: Express) {
 
       const { username, password } = result.data;
 
-      // Check if user already exists
       const [existingUser] = await db
         .select()
         .from(users)
@@ -228,10 +268,8 @@ export async function setupAuth(app: Express) {
         });
       }
 
-      // Hash the password
       const hashedPassword = await crypto.hash(password);
 
-      // Create the new user
       const [newUser] = await db
         .insert(users)
         .values({
@@ -240,7 +278,6 @@ export async function setupAuth(app: Express) {
         })
         .returning();
 
-      // Log the user in after registration
       req.login(newUser, (err) => {
         if (err) {
           return next(err);
@@ -307,12 +344,17 @@ export async function setupAuth(app: Express) {
   });
 
   app.post("/api/logout", (req, res) => {
+    const userId = req.user?.id;
     req.logout((err) => {
       if (err) {
         return res.status(500).json({
           success: false,
           message: "Logout failed"
         });
+      }
+
+      if (userId) {
+        matchRequestLimits.delete(userId);
       }
 
       res.json({ 
