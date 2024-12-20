@@ -1,13 +1,11 @@
-// server/routes.ts
 import type { Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { z } from "zod";
 import { db } from "@db";
 import { matches, users, messages } from "@db/schema";
-import { eq, and, or, ne, desc } from "drizzle-orm";
+import { eq, and, or, ne, desc, sql } from "drizzle-orm";
 import type { SelectUser } from "@db/schema";
 import { setupAuth } from "./auth";
-import { sql } from "drizzle-orm";
 
 // Helper functions for consistent API responses
 const sendError = (res: Response, status: number, message: string, details?: any) => {
@@ -47,7 +45,7 @@ const requireAuth = (req: Request, res: Response, next: NextFunction) => {
   if (!req.isAuthenticated()) {
     return sendError(res, 401, "Authentication required");
   }
-  
+
   const user = req.user as SelectUser;
   if (!user?.id) {
     return sendError(res, 401, "Invalid session");
@@ -63,7 +61,7 @@ export function registerRoutes(app: Express): Server {
   app.get("/api/matches", requireAuth, async (req: Request, res: Response) => {
     try {
       const user = req.user as SelectUser;
-      
+
       const potentialMatches = await db.select({
         id: users.id,
         username: users.username,
@@ -73,7 +71,7 @@ export function registerRoutes(app: Express): Server {
         createdAt: users.createdAt,
         matchStatus: matches.status,
         matchId: matches.id,
-        compatibilityScore: sql<number>`0`, // Will be calculated below
+        compatibilityScore: sql<number>`COALESCE(0, 0)`, // Default compatibility score
       })
         .from(users)
         .leftJoin(matches, or(
@@ -91,7 +89,7 @@ export function registerRoutes(app: Express): Server {
           eq(users.quizCompleted, true)
         ));
 
-      return res.json(potentialMatches);
+      return sendSuccess(res, potentialMatches);
     } catch (error) {
       console.error("Error fetching matches:", error);
       return sendError(res, 500, "Failed to fetch matches", error);

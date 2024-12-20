@@ -5,7 +5,7 @@ import session from "express-session";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { users, insertUserSchema, type User as SelectUser } from "@db/schema";
+import { users, insertUserSchema, type SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
@@ -13,9 +13,9 @@ import { z } from "zod";
 const scryptAsync = promisify(scrypt);
 
 // Add login schema
-const loginSchema = insertUserSchema.pick({
-  username: true,
-  password: true,
+const loginSchema = z.object({
+  username: z.string().min(1, "Username is required"),
+  password: z.string().min(1, "Password is required"),
 });
 
 export const crypto = {
@@ -72,6 +72,7 @@ export function setupAuth(app: Express) {
     }
   }
 
+  // Setup session middleware before passport
   app.use(session(sessionSettings));
   app.use(passport.initialize());
   app.use(passport.session());
@@ -111,11 +112,11 @@ export function setupAuth(app: Express) {
         .from(users)
         .where(eq(users.id, id))
         .limit(1);
-      
+
       if (!user) {
         return done(null, false);
       }
-      
+
       return done(null, user);
     } catch (err) {
       console.error('Session deserialize error:', err);
@@ -129,7 +130,10 @@ export function setupAuth(app: Express) {
       if (!result.success) {
         return res
           .status(400)
-          .send("Invalid input: " + result.error.issues.map(i => i.message).join(", "));
+          .json({ 
+            success: false, 
+            message: "Invalid input: " + result.error.issues.map(i => i.message).join(", ")
+          });
       }
 
       const { username, password } = result.data;
@@ -142,7 +146,10 @@ export function setupAuth(app: Express) {
         .limit(1);
 
       if (existingUser) {
-        return res.status(400).send("Username already exists");
+        return res.status(400).json({ 
+          success: false, 
+          message: "Username already exists" 
+        });
       }
 
       // Hash the password
@@ -163,8 +170,16 @@ export function setupAuth(app: Express) {
           return next(err);
         }
         return res.json({
+          success: true,
           message: "Registration successful",
-          user: { id: newUser.id, username: newUser.username },
+          user: { 
+            id: newUser.id, 
+            username: newUser.username,
+            name: newUser.name,
+            quizCompleted: newUser.quizCompleted,
+            isGroupCreator: newUser.isGroupCreator,
+            avatar: newUser.avatar
+          },
         });
       });
     } catch (error) {
@@ -173,11 +188,6 @@ export function setupAuth(app: Express) {
   });
 
   app.post("/api/login", (req, res, next) => {
-    const loginSchema = z.object({
-      username: z.string().min(1, "Username is required"),
-      password: z.string().min(1, "Password is required"),
-    });
-
     const result = loginSchema.safeParse(req.body);
     if (!result.success) {
       return res.status(400).json({ 
@@ -231,10 +241,16 @@ export function setupAuth(app: Express) {
   app.post("/api/logout", (req, res) => {
     req.logout((err) => {
       if (err) {
-        return res.status(500).send("Logout failed");
+        return res.status(500).json({
+          success: false,
+          message: "Logout failed"
+        });
       }
 
-      res.json({ message: "Logout successful" });
+      res.json({ 
+        success: true,
+        message: "Logout successful" 
+      });
     });
   });
 

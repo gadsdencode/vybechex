@@ -1,7 +1,7 @@
 import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from "@tanstack/react-query";
-import type { SelectUser as User } from "@db/schema";
-import { toast } from "./use-toast";
-import { getAuthToken, getUserId } from '@/utils/auth';
+import type { SelectUser } from "@db/schema";
+import { useToast } from "@/hooks/use-toast";
+import { getUserId } from '@/utils/auth';
 
 export interface Interest {
   name: string;
@@ -85,15 +85,6 @@ interface MatchProfile extends ExtendedUser {
   matchId?: number;
 }
 
-const traitMapping: Record<keyof PersonalityTraits, { name: string; category: Interest['category'] }> = {
-  extraversion: { name: "Social Activities", category: "personality" },
-  openness: { name: "Trying New Things", category: "personality" },
-  planning: { name: "Organized Activities", category: "personality" },
-  communication: { name: "Deep Conversations", category: "personality" },
-  values: { name: "Meaningful Connections", category: "value" },
-  sociability: { name: "Group Activities", category: "hobby" }
-} as const;
-
 interface UseMatchesReturn {
   matches: Match[];
   requests: Match[];
@@ -108,33 +99,36 @@ interface UseMatchesReturn {
   respondToMatch: ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => void;
 }
 
+const traitMapping: Record<keyof PersonalityTraits, { name: string; category: Interest['category'] }> = {
+  extraversion: { name: "Social Activities", category: "personality" },
+  openness: { name: "Trying New Things", category: "personality" },
+  planning: { name: "Organized Activities", category: "personality" },
+  communication: { name: "Deep Conversations", category: "personality" },
+  values: { name: "Meaningful Connections", category: "value" },
+  sociability: { name: "Group Activities", category: "hobby" }
+} as const;
+
 const handleApiError = (error: unknown, prefix: string = "API Error"): never => {
   if (error instanceof Error) {
     console.error(`${prefix}:`, error);
-    throw new Error(`${prefix} ${error.message}`);
+    throw new Error(`${prefix}: ${error.message}`);
   }
   console.error(`${prefix}:`, error);
-  throw new Error(`${prefix} Unknown error occurred`);
+  throw new Error(`${prefix}: Unknown error occurred`);
 };
 
 export function useMatches(): UseMatchesReturn {
   const queryClient = useQueryClient();
+  const { toast } = useToast();
 
   const { data: matches = [], isLoading: isLoadingMatches } = useQuery({
     queryKey: ['matches'],
     queryFn: async () => {
       try {
-        const authToken = getAuthToken();
-        if (!authToken) {
-          console.log('No auth token found');
-          return [];
-        }
-
         const response = await fetch('/api/matches', {
           credentials: 'include',
           headers: {
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${authToken}`
+            'Accept': 'application/json'
           }
         });
 
@@ -149,7 +143,7 @@ export function useMatches(): UseMatchesReturn {
 
         const data = await response.json();
         console.log('Matches response:', data);
-        return Array.isArray(data) ? data : [];
+        return Array.isArray(data.data) ? data.data : [];
       } catch (error) {
         console.error('Match fetch error:', error);
         throw error;
@@ -169,18 +163,11 @@ export function useMatches(): UseMatchesReturn {
           return [];
         }
 
-        const authToken = getAuthToken();
-        if (!authToken) {
-          console.log('No auth token found');
-          return [];
-        }
-
         const response = await fetch('/api/matches/requests', {
           method: 'GET',
           credentials: 'include',
           headers: {
-            'Accept': 'application/json',
-            'Authorization': `Bearer ${authToken}`
+            'Accept': 'application/json'
           }
         });
 
@@ -203,7 +190,7 @@ export function useMatches(): UseMatchesReturn {
         }
 
         const data = await response.json();
-        return data.requests || [];
+        return data.data?.requests || [];
       } catch (error) {
         console.error('Match request error:', error);
         toast({
@@ -216,9 +203,8 @@ export function useMatches(): UseMatchesReturn {
     },
     retry: 1,
     retryDelay: 1000,
-    staleTime: 30000 // Cache for 30 seconds
+    staleTime: 30000
   });
-  
 
   const { mutate: respondToMatch, isPending: isResponding } = useMutation({
     mutationFn: async ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => {
@@ -249,8 +235,7 @@ export function useMatches(): UseMatchesReturn {
             credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': `Bearer ${getAuthToken()}`
+              'Accept': 'application/json'
             },
             body: JSON.stringify({ status })
           });
@@ -380,21 +365,11 @@ export function useMatches(): UseMatchesReturn {
         throw new Error('User ID is required');
       }
 
-      const currentUserId = getUserId();
-      const authToken = getAuthToken();
-
-      if (!currentUserId || !authToken) {
-        console.error('Authentication required:', { currentUserId, hasToken: !!authToken });
-        queryClient.invalidateQueries({ queryKey: ['user'] });
-        throw new Error('Authentication required');
-      }
-
       const parsedId = parseInt(id);
       if (isNaN(parsedId) || parsedId <= 0) {
         throw new Error('Invalid user ID: must be a positive number');
       }
 
-      // Prepare match request payload according to server schema
       const matchData = {
         targetUserId: parsedId
       };
@@ -405,8 +380,7 @@ export function useMatches(): UseMatchesReturn {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Accept': 'application/json',
-          'Authorization': `Bearer ${authToken}`
+          'Accept': 'application/json'
         },
         credentials: 'include',
         body: JSON.stringify(matchData)
@@ -422,37 +396,8 @@ export function useMatches(): UseMatchesReturn {
       }
 
       if (!response.ok) {
-        console.error('Match request failed:', {
-          status: response.status,
-          statusText: response.statusText,
-          data: responseData,
-          requestData: matchData,
-          timestamp: new Date().toISOString()
-        });
-
         const errorMessage = responseData?.message || 'An error occurred while processing the match request';
-
-        switch (response.status) {
-          case 400:
-            throw new Error(`Invalid request: ${errorMessage}`);
-          case 401:
-            queryClient.invalidateQueries({ queryKey: ['user'] });
-            throw new Error('Please log in to initiate matches');
-          case 403:
-            throw new Error('You do not have permission to initiate matches');
-          case 404:
-            throw new Error('User not found');
-          case 409:
-            throw new Error('A match already exists with this user');
-          case 422:
-            throw new Error('Please complete your profile before matching');
-          case 429:
-            throw new Error('Too many requests. Please try again later.');
-          case 500:
-            throw new Error('Server error occurred. Please try again later.');
-          default:
-            throw new Error(`${errorMessage} (Status: ${response.status})`);
-        }
+        throw new Error(errorMessage);
       }
 
       if (!responseData.success || !responseData.data?.match) {
@@ -542,8 +487,7 @@ export function useMatches(): UseMatchesReturn {
             credentials: 'include',
             headers: {
               'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': `Bearer ${getAuthToken()}`
+              'Accept': 'application/json'
             },
             body: JSON.stringify({
               userId2: parsedId

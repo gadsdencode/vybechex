@@ -1,5 +1,4 @@
-// Constants for storage keys
-const AUTH_TOKEN_KEY = 'auth_token';
+// Store user data in localStorage for persistence
 const USER_ID_KEY = 'user_id';
 const USER_DATA_KEY = 'user_data';
 
@@ -11,22 +10,11 @@ interface UserData {
   isGroupCreator: boolean;
 }
 
-// Get the authentication token from localStorage
-export function getAuthToken(): string | null {
-  try {
-    return localStorage.getItem(AUTH_TOKEN_KEY);
-  } catch (error) {
-    console.error('Error accessing auth token:', error);
-    return null;
-  }
-}
-
 // Get the user ID from localStorage
 export function getUserId(): number | null {
   try {
     const userId = localStorage.getItem(USER_ID_KEY);
-    const parsedId = userId ? parseInt(userId, 10) : null;
-    return !isNaN(parsedId) ? parsedId : null;
+    return userId ? parseInt(userId, 10) : null;
   } catch (error) {
     console.error('Error accessing user ID:', error);
     return null;
@@ -41,15 +29,6 @@ export function getUserData(): UserData | null {
   } catch (error) {
     console.error('Error accessing user data:', error);
     return null;
-  }
-}
-
-// Set the authentication token
-export function setAuthToken(token: string): void {
-  try {
-    localStorage.setItem(AUTH_TOKEN_KEY, token);
-  } catch (error) {
-    console.error('Error setting auth token:', error);
   }
 }
 
@@ -74,7 +53,6 @@ export function setUserData(data: UserData): void {
 // Clear all auth data (for logout)
 export function clearAuthData(): void {
   try {
-    localStorage.removeItem(AUTH_TOKEN_KEY);
     localStorage.removeItem(USER_ID_KEY);
     localStorage.removeItem(USER_DATA_KEY);
   } catch (error) {

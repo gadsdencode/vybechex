@@ -1,4 +1,4 @@
-import { setUserData, setUserId, setAuthToken, clearAuthData, getAuthToken } from '@/utils/auth';
+import { setUserData, setUserId, clearAuthData } from '@/utils/auth';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SelectUser } from "@db/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -19,7 +19,6 @@ interface AuthResponse {
     isGroupCreator?: boolean;
     avatar?: string;
   };
-  token?: string;
 }
 
 async function handleAuthRequest(
@@ -55,12 +54,6 @@ async function handleAuthRequest(
       throw new Error("Invalid response format from server");
     }
 
-    // Store auth token immediately if present
-    if (parsedData.token) {
-      setAuthToken(parsedData.token);
-      console.log('Auth token stored successfully');
-    }
-
     return parsedData;
   } catch (error) {
     console.error("Auth request error:", error);
@@ -77,13 +70,11 @@ export function useUser() {
     queryFn: async () => {
       try {
         console.log('Fetching user data...');
-        const authToken = getAuthToken();
         const response = await fetch("/api/user", {
           credentials: "include",
           headers: {
             'Accept': 'application/json',
-            'Cache-Control': 'no-cache',
-            ...(authToken && { 'Authorization': `Bearer ${authToken}` })
+            'Cache-Control': 'no-cache'
           }
         });
 
@@ -135,15 +126,8 @@ export function useUser() {
         console.log("Login successful:", response);
 
         if (response.success) {
-          const { user, token } = response;
+          const { user } = response;
 
-          // Ensure token is set if provided
-          if (token) {
-            setAuthToken(token);
-            console.log('Auth token stored successfully');
-          }
-
-          // Update user data
           setUserId(user.id);
           setUserData({
             id: user.id,
@@ -164,7 +148,7 @@ export function useUser() {
       } catch (error) {
         console.error("Login error:", error);
         clearAuthData();
-        throw error instanceof Error ? error : new Error("Login failed");
+        throw error;
       }
     },
     onSuccess: (data) => {
@@ -188,9 +172,6 @@ export function useUser() {
   const registerMutation = useMutation({
     mutationFn: async (credentials: AuthCredentials) => {
       const response = await handleAuthRequest("/api/register", credentials);
-      if (response.token) {
-        setAuthToken(response.token);
-      }
       return { ...response, ok: true };
     },
     onSuccess: (data) => {
