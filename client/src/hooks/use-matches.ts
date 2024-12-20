@@ -87,7 +87,6 @@ interface MatchProfile extends ExtendedUser {
 
 interface UseMatchesReturn {
   matches: Match[];
-  requests: Match[];
   isLoading: boolean;
   isResponding: boolean;
   connect: (params: { id: string }) => Promise<Match>;
@@ -117,6 +116,10 @@ const handleApiError = (error: unknown, prefix: string = "API Error"): never => 
   throw new Error(`${prefix}: Unknown error occurred`);
 };
 
+interface MatchRequestPayload {
+  targetUserId: number;
+}
+
 export function useMatches(): UseMatchesReturn {
   const queryClient = useQueryClient();
   const { toast } = useToast();
@@ -143,7 +146,7 @@ export function useMatches(): UseMatchesReturn {
 
         const data = await response.json();
         console.log('Matches response:', data);
-        return Array.isArray(data.data) ? data.data : [];
+        return data.data || [];
       } catch (error) {
         console.error('Match fetch error:', error);
         throw error;
@@ -153,66 +156,13 @@ export function useMatches(): UseMatchesReturn {
     retryDelay: 1000
   });
 
-  const { data: requests = [], isLoading: isLoadingRequests } = useQuery({
-    queryKey: ['match-requests'],
-    queryFn: async () => {
-      try {
-        const userId = getUserId();
-        if (!userId) {
-          console.log('Missing user ID');
-          return [];
-        }
-
-        const response = await fetch('/api/matches/requests', {
-          method: 'GET',
-          credentials: 'include',
-          headers: {
-            'Accept': 'application/json'
-          }
-        });
-
-        if (!response.ok) {
-          if (response.status === 401) {
-            console.log('Unauthorized request');
-            return [];
-          }
-
-          const errorData = await response.json().catch(() => ({ 
-            message: `Request failed with status ${response.status}` 
-          }));
-          console.error('Match request error:', errorData);
-          toast({
-            title: "Error fetching match requests",
-            description: errorData.message || "Failed to fetch match requests",
-            variant: "destructive"
-          });
-          return [];
-        }
-
-        const data = await response.json();
-        return data.data?.requests || [];
-      } catch (error) {
-        console.error('Match request error:', error);
-        toast({
-          title: "Error fetching match requests",
-          description: error instanceof Error ? error.message : "An unexpected error occurred",
-          variant: "destructive"
-        });
-        return [];
-      }
-    },
-    retry: 1,
-    retryDelay: 1000,
-    staleTime: 30000
-  });
-
   const { mutate: respondToMatch, isPending: isResponding } = useMutation({
     mutationFn: async ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => {
       // Input validation with detailed error messages
       if (!matchId) {
         throw new Error('Match ID is required');
       }
-      
+
       if (isNaN(matchId) || matchId <= 0) {
         throw new Error('Invalid match ID: must be a positive number');
       }
@@ -250,7 +200,7 @@ export function useMatches(): UseMatchesReturn {
 
           if (!response.ok) {
             const errorMessage = responseData?.message || 'An error occurred while processing the match request';
-            
+
             switch (response.status) {
               case 400:
                 throw new Error(`Invalid request: ${errorMessage}`);
@@ -276,9 +226,9 @@ export function useMatches(): UseMatchesReturn {
         } catch (error) {
           console.error(`Match response error (attempt ${4 - retries}/3):`, error);
           lastError = error instanceof Error ? error : new Error('Unknown error occurred');
-          
+
           // Only retry on network errors or 5xx server errors
-          if (error instanceof Error && error.name === 'TypeError' || 
+          if (error instanceof Error && error.name === 'TypeError' ||
               (error as any).status >= 500) {
             retries--;
             if (retries > 0) {
@@ -335,8 +285,8 @@ export function useMatches(): UseMatchesReturn {
       // Show detailed error message
       toast({
         title: "Unable to Process Match Request",
-        description: error instanceof Error 
-          ? error.message 
+        description: error instanceof Error
+          ? error.message
           : "There was a problem processing your response. Please try again.",
         variant: "destructive",
         duration: 7000
@@ -350,7 +300,7 @@ export function useMatches(): UseMatchesReturn {
     // Add retry configuration
     retry: (failureCount, error) => {
       // Only retry on network errors or 5xx server errors
-      if (error instanceof Error && error.name === 'TypeError' || 
+      if (error instanceof Error && error.name === 'TypeError' ||
           (error as any).status >= 500) {
         return failureCount < 3;
       }
@@ -370,63 +320,59 @@ export function useMatches(): UseMatchesReturn {
         throw new Error('Invalid user ID: must be a positive number');
       }
 
-      const matchData = {
-        targetUserId: parsedId
-      };
-
-      console.log('Attempting match request with data:', matchData);
+      console.log('Attempting match request for user:', parsedId);
 
       const response = await fetch('/api/matches', {
         method: 'POST',
+        credentials: 'include',
         headers: {
           'Content-Type': 'application/json',
           'Accept': 'application/json'
         },
-        credentials: 'include',
-        body: JSON.stringify(matchData)
+        body: JSON.stringify({
+          targetUserId: parsedId
+        })
       });
 
-      let responseData;
-      try {
-        responseData = await response.json();
-        console.log('Match request response:', responseData);
-      } catch (parseError) {
-        console.error('Error parsing response:', parseError);
-        throw new Error('Server response was not in the expected format');
-      }
-
       if (!response.ok) {
-        const errorMessage = responseData?.message || 'An error occurred while processing the match request';
-        throw new Error(errorMessage);
+        const errorData = await response.json();
+        console.error('Match request failed:', errorData);
+        throw new Error(errorData.message || 'Failed to initiate match');
       }
 
-      if (!responseData.success || !responseData.data?.match) {
-        throw new Error('Invalid response format from server');
+      const responseData = await response.json();
+
+      if (!responseData.success) {
+        throw new Error(responseData.message || 'Failed to process match request');
       }
 
-      const { match } = responseData.data;
+      const { match, type } = responseData.data;
+
+      // Update local cache
       queryClient.invalidateQueries({ queryKey: ['matches'] });
 
+      // Show appropriate toast based on response type
+      const messages = {
+        created: 'Match request sent successfully!',
+        updated: 'Match accepted!',
+        existing: 'Already matched with this user',
+        pending: 'Match request is pending'
+      };
+
       toast({
-        title: "Match Request Sent",
-        description: "We'll notify you when they respond!",
-        variant: "default",
-        duration: 5000
+        title: 'Success',
+        description: messages[type as keyof typeof messages] || 'Match status updated',
+        variant: 'default'
       });
 
       return match;
     } catch (error) {
-      console.error('Match connection error:', {
-        error,
-        id,
-        timestamp: new Date().toISOString()
-      });
+      console.error('Match connection error:', error);
 
       toast({
-        title: "Connection Failed",
-        description: error instanceof Error ? error.message : "An unexpected error occurred",
-        variant: "destructive",
-        duration: 5000
+        title: 'Connection Failed',
+        description: error instanceof Error ? error.message : 'Failed to connect with user',
+        variant: 'destructive'
       });
 
       throw error;
@@ -471,7 +417,7 @@ export function useMatches(): UseMatchesReturn {
       if (!targetId) {
         throw new Error('User ID is required');
       }
-      
+
       const parsedId = parseInt(targetId);
       if (isNaN(parsedId) || parsedId <= 0) {
         throw new Error('Invalid user ID: must be a positive number');
@@ -504,7 +450,7 @@ export function useMatches(): UseMatchesReturn {
 
           if (!response.ok) {
             const errorMessage = data?.message || 'An error occurred while initiating the match';
-            
+
             switch (response.status) {
               case 400:
                 throw new Error(`Invalid request: ${errorMessage}`);
@@ -572,9 +518,9 @@ export function useMatches(): UseMatchesReturn {
         } catch (error) {
           console.error(`Match initiation error (attempt ${4 - retries}/3):`, error);
           lastError = error instanceof Error ? error : new Error('Unknown error occurred');
-          
+
           // Only retry on network errors or 5xx server errors
-          if (error instanceof Error && error.name === 'TypeError' || 
+          if (error instanceof Error && error.name === 'TypeError' ||
               (error as any).status >= 500) {
             retries--;
             if (retries > 0) {
@@ -598,7 +544,7 @@ export function useMatches(): UseMatchesReturn {
       });
 
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      
+
 
       toast({
         title: "Match Request Failed",
@@ -647,7 +593,7 @@ export function useMatches(): UseMatchesReturn {
         try {
           const response = await fetch(`/api/matches/${matchId}/messages`, {
             method: "POST",
-            headers: { 
+            headers: {
               "Content-Type": "application/json",
               "Accept": "application/json"
             },
@@ -676,15 +622,14 @@ export function useMatches(): UseMatchesReturn {
 
   return {
     matches,
-    requests,
-    isLoading: isLoadingMatches || isLoadingRequests,
-    isResponding,
+    isLoading: isLoadingMatches,
     connect,
     getMessages,
     getMatch,
     initiateMatch,
     useMatchMessages,
     useSendMessage,
-    respondToMatch
+    respondToMatch,
+    isResponding
   };
 }

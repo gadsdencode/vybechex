@@ -39,24 +39,22 @@ app.use((req, res, next) => {
   next();
 });
 
-// Initialize authentication - this sets up session middleware
+// Initialize authentication before routes
 setupAuth(app);
 
 // Initialize routes after auth is setup
 const server = registerRoutes(app);
 
-// Global error handler
+// Global error handler - must be after routes but before Vite setup
 app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   const status = err.status || err.statusCode || 500;
   const message = err.message || "Internal Server Error";
 
-  // Log error with context
+  // Log error with context for debugging
   console.error('Server Error:', {
     status,
     message,
     stack: err.stack,
-    code: err.code,
-    name: err.name,
     timestamp: new Date().toISOString()
   });
 
@@ -68,24 +66,8 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
   });
 });
 
-// Graceful shutdown handler
-async function shutdown(signal: string) {
-  console.log(`\n${signal} received. Starting graceful shutdown...`);
-
-  if (server) {
-    await new Promise<void>((resolve) => {
-      server.close(() => {
-        console.log('HTTP server closed');
-        resolve();
-      });
-    });
-  }
-
-  process.exit(0);
-}
-
-// Setup server with proper error handling
-async function startServer() {
+// Start the server with proper error handling
+(async () => {
   try {
     // Setup development or production mode
     if (app.get("env") === "development") {
@@ -99,30 +81,19 @@ async function startServer() {
     server.listen(PORT, "0.0.0.0", () => {
       log(`Server running on port ${PORT}`);
     });
-
-    // Register shutdown handlers
-    process.on('SIGTERM', () => shutdown('SIGTERM'));
-    process.on('SIGINT', () => shutdown('SIGINT'));
-
   } catch (error) {
     console.error('Failed to start server:', error);
     process.exit(1);
   }
-}
+})();
 
 // Handle uncaught errors
 process.on('uncaughtException', (error) => {
   console.error('Uncaught Exception:', error);
-  shutdown('UNCAUGHT_EXCEPTION').catch(console.error);
+  process.exit(1);
 });
 
 process.on('unhandledRejection', (reason, promise) => {
   console.error('Unhandled Rejection at:', promise, 'reason:', reason);
-  shutdown('UNHANDLED_REJECTION').catch(console.error);
-});
-
-// Start the server
-startServer().catch(error => {
-  console.error('Failed to start server:', error);
   process.exit(1);
 });
