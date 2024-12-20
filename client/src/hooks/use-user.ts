@@ -1,4 +1,4 @@
-import { setUserData, setUserId, setAuthToken, clearAuthData } from '@/utils/auth';
+import { setUserData, setUserId, setAuthToken, clearAuthData, getAuthToken } from '@/utils/auth';
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { SelectUser } from "@db/schema";
 import { useToast } from "@/hooks/use-toast";
@@ -9,6 +9,7 @@ interface AuthCredentials {
 }
 
 interface AuthResponse {
+  success: boolean;
   message: string;
   user: {
     id: number;
@@ -19,8 +20,6 @@ interface AuthResponse {
     avatar?: string;
   };
   token?: string;
-  authToken?: string;
-  avatar?: string;
 }
 
 async function handleAuthRequest(
@@ -37,11 +36,12 @@ async function handleAuthRequest(
 
     let parsedData;
     const responseData = await response.text();
-    
+
     try {
       parsedData = JSON.parse(responseData);
+      console.log('Auth response:', parsedData);
     } catch (e) {
-      console.error("Failed to parse response:", responseData);
+      console.error('Failed to parse response:', responseData);
       throw new Error(responseData || "Invalid server response");
     }
 
@@ -51,14 +51,19 @@ async function handleAuthRequest(
       throw new Error(errorMessage);
     }
 
-    // Validate the response structure
-    if (!parsedData.user || !parsedData.message) {
+    if (!parsedData.success || !parsedData.user) {
       throw new Error("Invalid response format from server");
+    }
+
+    // Store auth token immediately if present
+    if (parsedData.token) {
+      setAuthToken(parsedData.token);
+      console.log('Auth token stored successfully');
     }
 
     return parsedData;
   } catch (error) {
-    console.error("Login error:", error);
+    console.error("Auth request error:", error);
     throw error instanceof Error ? error : new Error("Authentication failed");
   }
 }
@@ -72,29 +77,31 @@ export function useUser() {
     queryFn: async () => {
       try {
         console.log('Fetching user data...');
+        const authToken = getAuthToken();
         const response = await fetch("/api/user", {
           credentials: "include",
           headers: {
             'Accept': 'application/json',
-            'Cache-Control': 'no-cache'
+            'Cache-Control': 'no-cache',
+            ...(authToken && { 'Authorization': `Bearer ${authToken}` })
           }
         });
-  
+
         if (response.status === 401) {
           console.log("User not authenticated");
           clearAuthData();
           return null;
         }
-  
+
         if (!response.ok) {
           console.error("Failed to fetch user:", response.status, response.statusText);
           const errorText = await response.text();
           throw new Error(`Failed to fetch user: ${errorText}`);
         }
-  
+
         const userData = await response.json();
         console.log("User data fetched:", userData);
-        
+
         if (userData) {
           setUserId(userData.id);
           setUserData({
@@ -104,12 +111,9 @@ export function useUser() {
             avatar: userData.avatar || "/default-avatar.png",
             isGroupCreator: userData.isGroupCreator || false
           });
-          
-          // Invalidate related queries
-          queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
           return userData;
         }
-        
+
         clearAuthData();
         return null;
       } catch (error) {
@@ -118,7 +122,7 @@ export function useUser() {
         return null;
       }
     },
-    staleTime: 1000 * 60, // Cache for 1 minute
+    staleTime: 1000 * 60,
     gcTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
     retry: false,
@@ -127,52 +131,48 @@ export function useUser() {
   const loginMutation = useMutation({
     mutationFn: async (credentials: AuthCredentials) => {
       try {
-        const response = await fetch("/api/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(credentials),
-          credentials: "include"
-        });
+        const response = await handleAuthRequest("/api/login", credentials);
+        console.log("Login successful:", response);
 
-        if (!response.ok) {
-          const errorData = await response.text();
-          throw new Error(errorData || "Login failed");
+        if (response.success) {
+          const { user, token } = response;
+
+          // Ensure token is set if provided
+          if (token) {
+            setAuthToken(token);
+            console.log('Auth token stored successfully');
+          }
+
+          // Update user data
+          setUserId(user.id);
+          setUserData({
+            id: user.id,
+            username: user.username,
+            name: user.name || user.username,
+            avatar: user.avatar || "/default-avatar.png",
+            isGroupCreator: user.isGroupCreator || false
+          });
+
+          // Invalidate and refetch relevant queries
+          queryClient.invalidateQueries({ queryKey: ['/api/user'] });
+          queryClient.invalidateQueries({ queryKey: ['/api/matches'] });
+
+          return { ok: true, user };
         }
 
-        const data = await response.json();
-        return { ...data, ok: true };
+        throw new Error(response.message || "Login failed");
       } catch (error) {
         console.error("Login error:", error);
+        clearAuthData();
         throw error instanceof Error ? error : new Error("Login failed");
       }
     },
     onSuccess: (data) => {
       console.log("Login successful:", data);
-      if (data.user) {
-        // Update user data in query cache
-        queryClient.setQueryData(["/api/user"], data.user);
-        
-        // Force refetch to ensure we have the latest data
-        queryClient.invalidateQueries({ 
-          queryKey: ["/api/user"],
-          refetchType: "all"
-        });
-        
-        // Store essential user data
-        setUserId(data.user.id);
-        setUserData({
-          id: data.user.id,
-          username: data.user.username,
-          name: data.user.name || null,
-          avatar: data.user.avatar || "/default-avatar.png",
-          isGroupCreator: data.user.isGroupCreator || false
-        });
-
-        toast({
-          title: "Welcome back!",
-          description: "You have been successfully logged in.",
-        });
-      }
+      toast({
+        title: "Welcome back!",
+        description: "You have been successfully logged in.",
+      });
     },
     onError: (error: Error) => {
       console.error("Login error:", error);
@@ -188,6 +188,9 @@ export function useUser() {
   const registerMutation = useMutation({
     mutationFn: async (credentials: AuthCredentials) => {
       const response = await handleAuthRequest("/api/register", credentials);
+      if (response.token) {
+        setAuthToken(response.token);
+      }
       return { ...response, ok: true };
     },
     onSuccess: (data) => {
@@ -222,9 +225,8 @@ export function useUser() {
         throw new Error(errorText || "Logout failed");
       }
 
-      const data = await response.json();
-      console.log("Logout response:", data);
-      return data;
+      clearAuthData();
+      return response.json();
     },
     onSuccess: () => {
       queryClient.setQueryData(["/api/user"], null);

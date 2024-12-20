@@ -19,8 +19,9 @@ export default function Chat() {
   const [, params] = useRoute<{ id: string }>("/chat/:id");
   const matchId = params?.id ? parseInt(params.id) : null;
   const { user } = useUser();
-  const { getMessages, sendMessage, getMatch } = useMatches();
+  const { getMessages, getMatch, useSendMessage } = useMatches();
   const { getSuggestions, craftMessage, getEventSuggestions } = useChat();
+  const { mutate: sendMessage } = useSendMessage();
   const [newMessage, setNewMessage] = useState("");
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const { toast } = useToast();
@@ -30,9 +31,18 @@ export default function Chat() {
   // Get match details first
   const { data: match, isLoading: isLoadingMatch, error: matchError } = useQuery<Match, Error>({
     queryKey: ['matches', matchId] as QueryKey,
-    queryFn: () => {
+    queryFn: async () => {
       if (!matchId) throw new Error('No match ID provided');
-      return getMatch(matchId.toString());
+      const matchProfile = await getMatch(matchId);
+      // Convert PersonalityTraits to Record<string, number>
+      const converted: Match = {
+        ...matchProfile,
+        personalityTraits: Object.entries(matchProfile.personalityTraits).reduce((acc, [key, value]) => ({
+          ...acc,
+          [key]: value
+        }), {} as Record<string, number>)
+      };
+      return converted;
     },
     enabled: !!matchId,
     retry: (failureCount, error) => {
@@ -49,9 +59,14 @@ export default function Chat() {
   // Only fetch messages if match exists and is accepted
   const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[], Error>({
     queryKey: ['messages', matchId] as QueryKey,
-    queryFn: () => {
+    queryFn: async () => {
       if (!matchId) throw new Error('No match ID provided');
-      return getMessages(matchId.toString());
+      const rawMessages = await getMessages(matchId.toString());
+      // Transform the createdAt string into a Date object
+      return rawMessages.map(msg => ({
+        ...msg,
+        createdAt: new Date(msg.createdAt)
+      }));
     },
     enabled: !!matchId && match?.status === 'accepted',
     retry: (failureCount, error) => {
@@ -107,30 +122,21 @@ export default function Chat() {
   const isLoading = isLoadingMessages || isLoadingSuggestions || isLoadingEvents;
   const eventSuggestions = eventSuggestionsData.suggestions;
 
-  // Send message mutation
-  const sendMessageMutation = useMutation({
-    mutationFn: async (content: string) => {
-      if (!matchId) throw new Error("No match ID");
-      return sendMessage({ matchId: matchId.toString(), content });
-    },
-    onSuccess: () => {
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newMessage.trim()) return;
+
+    try {
+      await sendMessage({ matchId: matchId!, content: newMessage.trim() });
       setNewMessage("");
       queryClient.invalidateQueries({ queryKey: ['messages', matchId] });
-    },
-    onError: (error: Error) => {
+    } catch (error: any) {
       toast({
         title: "Error sending message",
         description: error.message,
         variant: "destructive",
       });
-    },
-  });
-
-  const handleSend = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!newMessage.trim()) return;
-
-    sendMessageMutation.mutate(newMessage.trim());
+    }
   };
 
   if (isLoadingMatch) {

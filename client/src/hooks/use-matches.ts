@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient, UseQueryResult, UseMutationResult } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient, type UseQueryResult, type UseMutationResult } from "@tanstack/react-query";
 import type { SelectUser as User } from "@db/schema";
 import { toast } from "./use-toast";
 import { getAuthToken, getUserId } from '@/utils/auth';
@@ -70,7 +70,13 @@ interface Message {
   matchId: number;
   senderId: number;
   content: string;
-  createdAt: string;
+  createdAt: Date;
+  analyzed: boolean | null;
+  sentiment: {
+    score: number;
+    magnitude: number;
+    labels: string[];
+  } | null;
 }
 
 interface MatchProfile extends ExtendedUser {
@@ -118,25 +124,39 @@ export function useMatches(): UseMatchesReturn {
     queryKey: ['matches'],
     queryFn: async () => {
       try {
+        const authToken = getAuthToken();
+        if (!authToken) {
+          console.log('No auth token found');
+          return [];
+        }
+
         const response = await fetch('/api/matches', {
           credentials: 'include',
           headers: {
             'Accept': 'application/json',
-            'Authorization': `Bearer ${getAuthToken()}`
+            'Authorization': `Bearer ${authToken}`
           }
         });
+
         if (!response.ok) {
+          if (response.status === 401) {
+            console.log('Authentication required for matches');
+            queryClient.invalidateQueries({ queryKey: ['user'] });
+            return [];
+          }
           throw new Error('Failed to fetch matches');
         }
-        console.log('Matches response:', await response.clone().json());
+
         const data = await response.json();
-        // The server returns the matches array directly
+        console.log('Matches response:', data);
         return Array.isArray(data) ? data : [];
       } catch (error) {
         console.error('Match fetch error:', error);
         throw error;
       }
-    }
+    },
+    retry: 1,
+    retryDelay: 1000
   });
 
   const { data: requests = [], isLoading: isLoadingRequests } = useQuery({
@@ -199,6 +219,7 @@ export function useMatches(): UseMatchesReturn {
     staleTime: 30000 // Cache for 30 seconds
   });
   
+
   const { mutate: respondToMatch, isPending: isResponding } = useMutation({
     mutationFn: async ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => {
       // Input validation with detailed error messages
@@ -355,189 +376,110 @@ export function useMatches(): UseMatchesReturn {
 
   const connect = async ({ id }: { id: string }): Promise<Match> => {
     try {
-      // Input validation with detailed error messages
       if (!id) {
         throw new Error('User ID is required');
       }
 
-      // Get current user ID first to ensure we're authenticated
       const currentUserId = getUserId();
-      if (!currentUserId) {
+      const authToken = getAuthToken();
+
+      if (!currentUserId || !authToken) {
+        console.error('Authentication required:', { currentUserId, hasToken: !!authToken });
+        queryClient.invalidateQueries({ queryKey: ['user'] });
         throw new Error('Authentication required');
       }
 
-      // Get auth token and validate it
-      const authToken = getAuthToken();
-      if (!authToken) {
-        // Force refresh auth state
-        queryClient.invalidateQueries({ queryKey: ['user'] });
-        console.error('No auth token found when attempting to connect');
-        throw new Error('Authentication required');
-      }
-      
       const parsedId = parseInt(id);
       if (isNaN(parsedId) || parsedId <= 0) {
         throw new Error('Invalid user ID: must be a positive number');
       }
 
-      let retries = 3;
-      let lastError: Error | null = null;
+      // Prepare match request payload according to server schema
+      const matchData = {
+        targetUserId: parsedId
+      };
 
-      while (retries > 0) {
-        try {
-          // Get current user ID first
-          const currentUserId = getUserId();
-          if (!currentUserId) {
-            throw new Error('Authentication required');
-          }
-
-          // Check authentication token
-          const authToken = getAuthToken();
-          if (!authToken) {
-            console.error('No auth token found when attempting to connect');
-            throw new Error('Authentication required');
-          }
-
-          // Prepare request payload with proper typing
-          // Prepare match request payload with all required fields
-          const matchData = {
-            user_id_1: currentUserId,
-            user_id_2: parsedId,
-            match_type: 'request' as const,
-            status: 'requested' as const,
-            score: 0,
-            created_at: new Date().toISOString(),
-            last_activity_at: new Date().toISOString(),
-            verification_code: null,
-            verified_at: null
-          };
-
-          console.log('Sending match request with data:', matchData);
+      console.log('Attempting match request with data:', matchData);
 
       const response = await fetch('/api/matches', {
-            method: 'POST',
-            headers: { 
-              'Content-Type': 'application/json',
-              'Accept': 'application/json',
-              'Authorization': `Bearer ${authToken}`
-            },
-            credentials: 'include',
-            body: JSON.stringify(matchData)
-          });
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${authToken}`
+        },
+        credentials: 'include',
+        body: JSON.stringify(matchData)
+      });
 
-          let responseData;
-          try {
-            responseData = await response.json();
-          } catch (parseError) {
-            console.error('Error parsing response:', parseError);
-            throw new Error('Server response was not in the expected format');
-          }
+      let responseData;
+      try {
+        responseData = await response.json();
+        console.log('Match request response:', responseData);
+      } catch (parseError) {
+        console.error('Error parsing response:', parseError);
+        throw new Error('Server response was not in the expected format');
+      }
 
-          if (!response.ok) {
-            // Enhanced error logging
-            console.error('Match request failed:', {
-              status: response.status,
-              statusText: response.statusText,
-              data: responseData,
-              requestData: matchData,
-              timestamp: new Date().toISOString()
-            });
+      if (!response.ok) {
+        console.error('Match request failed:', {
+          status: response.status,
+          statusText: response.statusText,
+          data: responseData,
+          requestData: matchData,
+          timestamp: new Date().toISOString()
+        });
 
-            // Check for specific database errors
-            if (responseData?.error?.code === '42703') {
-              console.error('Database column error:', responseData.error);
-              throw new Error('Database configuration error. Please try again later.');
-            }
+        const errorMessage = responseData?.message || 'An error occurred while processing the match request';
 
-            const errorMessage = responseData?.message || 'An error occurred while processing the match request';
-            
-            switch (response.status) {
-              case 400:
-                throw new Error(`Invalid request: ${errorMessage}`);
-              case 401:
-                queryClient.invalidateQueries({ queryKey: ['user'] });
-                throw new Error('Authentication required. Please log in again.');
-              case 403:
-                throw new Error('You do not have permission to initiate matches');
-              case 404:
-                throw new Error('User not found');
-              case 409:
-                throw new Error('A match already exists with this user');
-              case 422:
-                throw new Error('Please complete your profile before matching');
-              case 429:
-                throw new Error('Too many requests. Please try again later.');
-              case 500:
-                console.error('Server error details:', responseData);
-                throw new Error('Server configuration error. Please try again later.');
-              default:
-                throw new Error(`${errorMessage} (Status: ${response.status})`);
-            }
-          }
-
-          // Success handling with type checking
-          if (!responseData.success || !responseData.data?.match) {
-            throw new Error('Invalid response format from server');
-          }
-
-          const { match } = responseData.data;
-          queryClient.invalidateQueries({ queryKey: ['matches'] });
-
-          // Show appropriate toast messages
-          const toastMessages = {
-            created: {
-              title: "Match Request Sent ✨",
-              description: "We'll notify you when they respond!",
-              variant: "default" as const
-            },
-            accepted: {
-              title: "Match Connected! 🎉",
-              description: "You can now start chatting!",
-              variant: "default" as const
-            },
-            pending: {
-              title: "Request Pending ⏳",
-              description: "Your request is still waiting for a response.",
-              variant: "default" as const
-            }
-          };
-
-          const type = match.status === 'accepted' ? 'accepted' :
-                      match.status === 'requested' ? 'created' : 'pending';
-
-          toast(toastMessages[type]);
-          return match;
-        } catch (error) {
-          console.error(`Match initiation error (attempt ${4 - retries}/3):`, error);
-          lastError = error instanceof Error ? error : new Error('Unknown error occurred');
-          
-          // Only retry on network errors or 5xx server errors
-          if (error instanceof Error && 
-              (error.name === 'TypeError' || error.message.includes('Server error occurred'))) {
-            retries--;
-            if (retries > 0) {
-              await new Promise(resolve => setTimeout(resolve, 1000 * (4 - retries)));
-              continue;
-            }
-          }
-          throw lastError;
+        switch (response.status) {
+          case 400:
+            throw new Error(`Invalid request: ${errorMessage}`);
+          case 401:
+            queryClient.invalidateQueries({ queryKey: ['user'] });
+            throw new Error('Please log in to initiate matches');
+          case 403:
+            throw new Error('You do not have permission to initiate matches');
+          case 404:
+            throw new Error('User not found');
+          case 409:
+            throw new Error('A match already exists with this user');
+          case 422:
+            throw new Error('Please complete your profile before matching');
+          case 429:
+            throw new Error('Too many requests. Please try again later.');
+          case 500:
+            throw new Error('Server error occurred. Please try again later.');
+          default:
+            throw new Error(`${errorMessage} (Status: ${response.status})`);
         }
       }
 
-      throw lastError || new Error('Failed to initiate match after multiple attempts');
+      if (!responseData.success || !responseData.data?.match) {
+        throw new Error('Invalid response format from server');
+      }
+
+      const { match } = responseData.data;
+      queryClient.invalidateQueries({ queryKey: ['matches'] });
+
+      toast({
+        title: "Match Request Sent",
+        description: "We'll notify you when they respond!",
+        variant: "default",
+        duration: 5000
+      });
+
+      return match;
     } catch (error) {
-      // Enhanced error handling with detailed logging
-      console.error('Match initiation error:', {
+      console.error('Match connection error:', {
         error,
         id,
         timestamp: new Date().toISOString()
       });
 
-      const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
-      
       toast({
         title: "Connection Failed",
-        description: errorMessage,
+        description: error instanceof Error ? error.message : "An unexpected error occurred",
         variant: "destructive",
         duration: 5000
       });
@@ -713,6 +655,7 @@ export function useMatches(): UseMatchesReturn {
 
       const errorMessage = error instanceof Error ? error.message : 'An unexpected error occurred';
       
+
       toast({
         title: "Match Request Failed",
         description: errorMessage,

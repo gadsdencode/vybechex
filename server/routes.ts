@@ -188,7 +188,7 @@ export function registerRoutes(app: Express): Server {
                 .update(matches)
                 .set({ 
                   status: 'accepted',
-                  updatedAt: new Date()
+                  createdAt: new Date()
                 })
                 .where(eq(matches.id, existingMatch.id))
                 .returning();
@@ -241,7 +241,7 @@ export function registerRoutes(app: Express): Server {
             userId2: targetUserId,
             status: 'requested',
             createdAt: new Date(),
-            updatedAt: new Date()
+            lastActivityAt: new Date()
           })
           .returning();
 
@@ -288,13 +288,13 @@ export function registerRoutes(app: Express): Server {
         return sendError(res, 404, "Match not found or not accepted");
       }
 
-      const messages = await db
+      const messageResults = await db
         .select()
         .from(messages)
         .where(eq(messages.matchId, matchId))
         .orderBy(desc(messages.createdAt));
 
-      return sendSuccess(res, messages);
+      return sendSuccess(res, messageResults);
     } catch (error) {
       console.error("Error fetching messages:", error);
       return sendError(res, 500, "Failed to fetch messages", error);
