@@ -5,64 +5,61 @@ import { setupAuth } from "./auth";
 
 const app = express();
 
-// Basic middleware setup
+// Basic middleware setup - before auth to ensure body parsing is available
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+// Request logging middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  const path = req.path;
+  let capturedJsonResponse: Record<string, any> | undefined = undefined;
+
+  const originalResJson = res.json;
+  res.json = function (bodyJson, ...args) {
+    capturedJsonResponse = bodyJson;
+    return originalResJson.apply(res, [bodyJson, ...args]);
+  };
+
+  res.on("finish", () => {
+    const duration = Date.now() - start;
+    if (path.startsWith("/api")) {
+      let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
+      if (capturedJsonResponse) {
+        logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
+      }
+      if (logLine.length > 80) {
+        logLine = logLine.slice(0, 79) + "…";
+      }
+      log(logLine);
+    }
+  });
+
+  next();
+});
 
 // Start the server with proper error handling
 (async () => {
   try {
-    // Initialize authentication before any routes
+    // Initialize authentication first
     await setupAuth(app);
-    console.log("Authentication system initialized successfully");
+    console.log("Authentication system initialized");
 
-    // Request logging middleware - after auth setup to include user context
-    app.use((req, res, next) => {
-      const start = Date.now();
-      const path = req.path;
-      let capturedJsonResponse: Record<string, any> | undefined = undefined;
-
-      // Capture JSON responses for logging
-      const originalResJson = res.json;
-      res.json = function (bodyJson, ...args) {
-        capturedJsonResponse = bodyJson;
-        return originalResJson.apply(res, [bodyJson, ...args]);
-      };
-
-      res.on("finish", () => {
-        const duration = Date.now() - start;
-        if (path.startsWith("/api")) {
-          let logLine = `${req.method} ${path} ${res.statusCode} in ${duration}ms`;
-          if (capturedJsonResponse) {
-            logLine += ` :: ${JSON.stringify(capturedJsonResponse)}`;
-          }
-          if (logLine.length > 80) {
-            logLine = logLine.slice(0, 79) + "…";
-          }
-          log(logLine);
-        }
-      });
-
-      next();
-    });
-
-    // Initialize routes after auth is setup
+    // Register routes after auth setup
     const server = registerRoutes(app);
 
-    // Global error handler - must be after routes but before Vite setup
+    // Global error handler
     app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
-      const status = err.status || err.statusCode || 500;
-      const message = err.message || "Internal Server Error";
-
-      // Log error with context for debugging
-      console.error('Server Error:', {
-        status,
-        message,
+      console.error('Error:', {
+        status: err.status || err.statusCode || 500,
+        message: err.message,
         stack: err.stack,
         timestamp: new Date().toISOString()
       });
 
-      // Send error response
+      const status = err.status || err.statusCode || 500;
+      const message = err.message || "Internal Server Error";
+
       res.status(status).json({
         success: false,
         message: app.get('env') === 'development' ? message : 'Internal Server Error',
@@ -70,7 +67,7 @@ app.use(express.urlencoded({ extended: false }));
       });
     });
 
-    // Setup development or production mode
+    // Setup Vite or static serving
     if (app.get("env") === "development") {
       await setupVite(app, server);
     } else {

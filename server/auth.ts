@@ -1,13 +1,13 @@
 import passport from "passport";
 import { IVerifyOptions, Strategy as LocalStrategy } from "passport-local";
-import { type Express } from "express";
+import { type Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
-import { users, insertUserSchema, type SelectUser } from "@db/schema";
+import { users, matches, insertUserSchema, type SelectUser } from "@db/schema";
 import { db } from "@db";
-import { eq } from "drizzle-orm";
+import { eq, or, and } from "drizzle-orm";
 import { z } from "zod";
 
 const scryptAsync = promisify(scrypt);
@@ -36,12 +36,70 @@ export const crypto = {
   },
 };
 
-// extend express user object with our schema
+// extend express request object with our schema
 declare global {
   namespace Express {
-    interface User extends SelectUser { }
+    interface User extends SelectUser {}
+    interface Request {
+      matchData?: typeof matches.$inferSelect;
+    }
   }
 }
+
+// Match verification middleware
+export const verifyMatchAccess = async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    if (!req.isAuthenticated()) {
+      return res.status(401).json({ 
+        success: false, 
+        message: "Authentication required" 
+      });
+    }
+
+    const user = req.user as SelectUser;
+    const matchId = parseInt(req.params.matchId);
+
+    if (isNaN(matchId)) {
+      return res.status(400).json({ 
+        success: false, 
+        message: "Invalid match ID" 
+      });
+    }
+
+    // Verify match exists and user is part of it
+    const [match] = await db
+      .select()
+      .from(matches)
+      .where(
+        and(
+          eq(matches.id, matchId),
+          or(
+            eq(matches.userId1, user.id),
+            eq(matches.userId2, user.id)
+          ),
+          eq(matches.status, 'accepted')
+        )
+      )
+      .limit(1);
+
+    if (!match) {
+      return res.status(404).json({ 
+        success: false, 
+        message: "Match not found or not accessible" 
+      });
+    }
+
+    // Add match to request for route handlers
+    req.matchData = match;
+    next();
+  } catch (error) {
+    console.error('Match verification error:', error);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to verify match access" 
+    });
+  }
+};
 
 export async function setupAuth(app: Express) {
   if (!process.env.DATABASE_URL) {
@@ -120,7 +178,7 @@ export async function setupAuth(app: Express) {
     })
   );
 
-  passport.serializeUser((user: any, done) => {
+  passport.serializeUser((user: Express.User, done) => {
     done(null, user.id);
   });
 
@@ -143,16 +201,15 @@ export async function setupAuth(app: Express) {
     }
   });
 
+  // Auth routes
   app.post("/api/register", async (req, res, next) => {
     try {
       const result = insertUserSchema.safeParse(req.body);
       if (!result.success) {
-        return res
-          .status(400)
-          .json({ 
-            success: false, 
-            message: "Invalid input: " + result.error.issues.map(i => i.message).join(", ")
-          });
+        return res.status(400).json({ 
+          success: false, 
+          message: "Invalid input: " + result.error.issues.map(i => i.message).join(", ")
+        });
       }
 
       const { username, password } = result.data;
@@ -267,7 +324,10 @@ export async function setupAuth(app: Express) {
 
   app.get("/api/user", (req, res) => {
     if (req.isAuthenticated()) {
-      return res.json(req.user);
+      return res.json({
+        success: true,
+        user: req.user
+      });
     }
 
     res.status(401).json({
