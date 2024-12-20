@@ -5,18 +5,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { MessageCircle, UserPlus, Zap, Loader2, User, Heart, Star, ChevronDown, ChevronUp } from 'lucide-react';
 import { useMatches } from '@/hooks/use-matches';
-import { Link, useLocation } from "wouter";
+import { useLocation } from "wouter";
 import { toast } from "@/hooks/use-toast";
 import { useQueryClient } from "@tanstack/react-query";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-
-import type { ExtendedUser, Interest, Match } from '@/hooks/use-matches';
+import type { Match } from '@/hooks/use-matches';
 
 interface MatchCardProps {
   match: Match;
@@ -31,21 +23,6 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
 
   // Transform personality traits into interests format
   const traits = match.personalityTraits || {};
-  const interests: Interest[] = Object.entries(traits).map(([key, score]) => {
-    let category: Interest['category'] = 'personality';
-    if (key === 'values') category = 'value';
-    else if (key === 'sociability') category = 'hobby';
-    
-    return {
-      name: key.charAt(0).toUpperCase() + key.slice(1),
-      score,
-      category
-    };
-  });
-
-  const topPersonalityTrait = interests.find(i => i.category === 'personality' && i.name !== 'Values' && i.name !== 'Sociability');
-  const topHobby = interests.find(i => i.category === 'hobby');
-  const topValue = interests.find(i => i.category === 'value');
 
   const handleConnect = async () => {
     if (!match.id) {
@@ -58,91 +35,40 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
     }
 
     try {
-        if (!match.id) {
-          toast({
-            title: "Connection Failed",
-            description: "Invalid match data",
-            variant: "destructive"
-          });
-          return;
-        }
+      setIsConnecting(true);
+      const response = await connect({ id: match.id.toString() });
 
-        setIsConnecting(true);
-        const response = await connect({ id: match.id.toString() });
-        
-        // Handle different match statuses with appropriate feedback
-        switch (response.status) {
-          case 'accepted':
-            toast({
-              title: "Match Connected!",
-              description: "You can now start chatting",
-              variant: "default"
-            });
-            // Ensure we have a valid match ID before redirecting
-            if (response.id) {
-              setLocation(`/chat/${response.id}`);
-            } else {
-              console.error('Missing match ID in response:', response);
-              setLocation('/matches');
-            }
-            break;
-          
-          case 'requested':
-          case 'pending':
-            toast({
-              title: response.status === 'requested' ? "Request Sent" : "Request Pending",
-              description: "We'll notify you when they respond",
-              variant: "default"
-            });
-            setLocation('/matches');
-            break;
-          
-          default:
-            console.warn('Unexpected match status:', response.status);
-            // Query the match status again to ensure we have the latest data
-            queryClient.invalidateQueries({ queryKey: ['matches'] });
-            setLocation('/matches');
-        }
+      switch (response.status) {
+        case 'accepted':
+          toast({
+            title: "Match Connected!",
+            description: "You can now start chatting",
+            variant: "default"
+          });
+          setLocation(`/chat/${response.id}`);
+          break;
+
+        case 'requested':
+        case 'pending':
+          toast({
+            title: response.status === 'requested' ? "Request Sent" : "Request Pending",
+            description: "We'll notify you when they respond",
+            variant: "default"
+          });
+          break;
+
+        default:
+          console.warn('Unexpected match status:', response.status);
+          queryClient.invalidateQueries({ queryKey: ['matches'] });
+      }
     } catch (error) {
       console.error('Connect error:', error);
-      
-      let title = "Connection Failed";
-      let description = error instanceof Error ? error.message : "Failed to connect with match";
-      let redirect = false;
-
-      // Enhanced error handling with specific user feedback
-      if (error instanceof Error) {
-        const msg = error.message.toLowerCase();
-        if (msg.includes('authentication required') || 
-            msg.includes('not authorized') ||
-            msg.includes('no auth token')) {
-          title = "Authentication Required";
-          description = "Please log in to connect with other users";
-          redirect = true;
-          // Force refresh auth state
-          queryClient.invalidateQueries({ queryKey: ['user'] });
-        } else if (msg.includes('invalid request data')) {
-          title = "Invalid Request";
-          description = "Unable to process match request. Please try again.";
-        } else if (msg.includes('server configuration error')) {
-          title = "System Error";
-          description = "We're experiencing technical difficulties. Please try again later.";
-        } else if (msg.includes('match request already exists')) {
-          title = "Request Exists";
-          description = "You already have a pending request with this user";
-        }
-      }
-      
       toast({
-        title,
-        description,
+        title: "Connection Failed",
+        description: error instanceof Error ? error.message : "Failed to connect with match",
         variant: "destructive",
         duration: 5000
       });
-
-      if (redirect) {
-        setLocation('/login');
-      }
     } finally {
       setIsConnecting(false);
     }
@@ -209,8 +135,8 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
         );
       case 'requested':
         return (
-          <Button 
-            className="w-full" 
+          <Button
+            className="w-full"
             variant="secondary"
             disabled
           >
@@ -223,18 +149,7 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
           <Button
             className="w-full"
             variant="default"
-            onClick={() => {
-              if (match.status === 'accepted') {
-                setLocation(`/chat/${match.id}`);
-              } else {
-                toast({
-                  title: "Cannot Access Chat",
-                  description: "This match must be accepted first",
-                  variant: "destructive"
-                });
-                setLocation('/matches');
-              }
-            }}
+            onClick={() => setLocation(`/chat/${match.id}`)}
           >
             <MessageCircle className="mr-2 h-4 w-4" />
             Start Chat
@@ -275,13 +190,13 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
   };
 
   return (
-    <Card className="relative transition-all duration-300 hover:shadow-lg hover:scale-105 overflow-hidden">
+    <Card className="relative transition-all duration-300 hover:shadow-lg hover:scale-105">
       <CardHeader className="flex flex-row items-start gap-4 p-6">
         <Avatar className="h-12 w-12 flex-shrink-0">
           <AvatarImage src={match.avatar || "/default-avatar.png"} alt={match.name || "User"} />
           <AvatarFallback>{(match.name || "?").charAt(0)}</AvatarFallback>
         </Avatar>
-        <div className="flex-1 min-w-0"> {/* min-w-0 prevents flex child from overflowing */}
+        <div className="flex-1 min-w-0">
           <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
             <h3 className="text-lg font-semibold truncate">{match.name || "Anonymous"}</h3>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -300,58 +215,16 @@ export const MatchCard: FC<MatchCardProps> = ({ match }) => {
               </Button>
             </div>
           </div>
-          <div className="space-y-2 mt-2">
-            {topPersonalityTrait && (
-              <p className="text-sm text-muted-foreground flex items-center gap-2 truncate">
-                <User className="h-3 w-3 flex-shrink-0" />
-                <span>Strong in {topPersonalityTrait.name}</span>
-              </p>
-            )}
-            {topHobby && (
-              <p className="text-sm text-muted-foreground flex items-center gap-2 truncate">
-                <Heart className="h-3 w-3 flex-shrink-0" />
-                <span>Enjoys {topHobby.name}</span>
-              </p>
-            )}
-            {topValue && (
-              <p className="text-sm text-muted-foreground flex items-center gap-2 truncate">
-                <Star className="h-3 w-3 flex-shrink-0" />
-                <span>Values {topValue.name}</span>
-              </p>
-            )}
-          </div>
+          {isExpanded && (
+            <div className="mt-4 space-y-2">
+              {match.matchExplanation && (
+                <p className="text-sm text-muted-foreground">{match.matchExplanation}</p>
+              )}
+            </div>
+          )}
         </div>
       </CardHeader>
       <CardContent className="px-6 pb-6">
-        {isExpanded && (
-          <div className="space-y-6 mb-6 p-4 bg-muted/50 rounded-lg">
-            <div className="space-y-2">
-              <h4 className="font-medium">Why You Match</h4>
-              <p className="text-sm text-muted-foreground break-words">{match.matchExplanation}</p>
-            </div>
-            <div className="space-y-2">
-              <h4 className="font-medium">Compatibility Breakdown</h4>
-              <div className="grid gap-2">
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">Personality</span>
-                  <span className="font-medium">{match.scoreBreakdown?.components.personality || 0}%</span>
-                </div>
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">Communication</span>
-                  <span className="font-medium">{match.scoreBreakdown?.components.communication || 0}%</span>
-                </div>
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">Social</span>
-                  <span className="font-medium">{match.scoreBreakdown?.components.social || 0}%</span>
-                </div>
-                <div className="flex justify-between text-sm items-center">
-                  <span className="text-muted-foreground">Activity</span>
-                  <span className="font-medium">{match.scoreBreakdown?.components.activity || 0}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
         <div className="flex gap-2">
           {getActionButton()}
         </div>

@@ -14,7 +14,7 @@ import Profile from "./pages/Profile";
 
 function App() {
   const { user, isLoading } = useUser();
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
 
   // Show loading spinner while checking authentication
   if (isLoading) {
@@ -46,7 +46,7 @@ function App() {
           <Route path="/matches/create/:id">
             {(params) => {
               if (user) {
-                window.location.href = `/chat/${params.id}`;
+                setLocation(`/chat/${params.id}`);
               }
               return null;
             }}

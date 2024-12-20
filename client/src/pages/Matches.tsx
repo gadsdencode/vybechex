@@ -12,33 +12,26 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MatchRequests } from "@/components/match-requests";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import type { Match } from "@/hooks/use-matches";
 
 gsap.registerPlugin(ScrollTrigger);
 
 export default function Matches() {
-  const { user } = useUser();
-  const { matches, requests, isLoading, isResponding, connect, respondToMatch } = useMatches();
+  const { user, isLoading: isUserLoading } = useUser();
+  const { matches, requests, isLoading: isMatchesLoading, isResponding, respondToMatch } = useMatches();
   const [showNetwork, setShowNetwork] = useState(false);
   const headerRef = useRef<HTMLDivElement>(null);
   const networkRef = useRef<HTMLDivElement>(null);
   const cardsRef = useRef<HTMLDivElement>(null);
 
+  const isLoading = isUserLoading || isMatchesLoading;
+
   useEffect(() => {
-    // Only proceed if we have matches and all refs are available
-    if (!isLoading && 
-        matches?.length > 0 && 
-        headerRef.current && 
-        networkRef.current && 
-        cardsRef.current) {
-      
+    if (!isLoading && matches?.length > 0 && headerRef.current && networkRef.current && cardsRef.current) {
       const ctx = gsap.context(() => {
-        // Ensure initial visibility
         gsap.set([headerRef.current, networkRef.current, cardsRef.current!.children], {
           autoAlpha: 1
         });
 
-        // Animate header
         gsap.from(headerRef.current, {
           autoAlpha: 0,
           y: -20,
@@ -46,14 +39,12 @@ export default function Matches() {
           clearProps: "all"
         });
 
-        // Animate network
         gsap.from(networkRef.current, {
           autoAlpha: 0,
           duration: 0.5,
           clearProps: "all"
         });
 
-        // Animate cards
         if (cardsRef.current?.children) {
           gsap.from(cardsRef.current.children, {
             autoAlpha: 0,
@@ -65,7 +56,6 @@ export default function Matches() {
         }
       });
 
-      // Cleanup function
       return () => ctx.revert();
     }
   }, [isLoading, matches]);
@@ -74,16 +64,30 @@ export default function Matches() {
     return (
       <div className="flex flex-col items-center justify-center min-h-[50vh]">
         <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-lg text-muted-foreground animate-pulse">Finding your perfect matches...</p>
+        <p className="text-lg text-muted-foreground animate-pulse">
+          Loading matches...
+        </p>
       </div>
     );
   }
 
-  if (!user?.quizCompleted) {
+  if (!user) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[50vh]">
+        <p className="text-lg text-muted-foreground">
+          Please log in to view your matches
+        </p>
+      </div>
+    );
+  }
+
+  if (!user.quizCompleted) {
     return (
       <div className="max-w-4xl mx-auto text-center py-16 px-4">
         <Users className="h-16 w-16 mx-auto mb-6 text-primary animate-bounce" />
-        <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Complete Your Profile</h1>
+        <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          Complete Your Profile
+        </h1>
         <p className="text-xl text-muted-foreground mb-8">
           Take our personality quiz to unlock a world of compatible friends!
         </p>
@@ -97,7 +101,9 @@ export default function Matches() {
   return (
     <div className="max-w-6xl mx-auto px-4 py-12">
       <div ref={headerRef} className="text-center mb-12">
-        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">Your Matches</h1>
+        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
+          Your Matches
+        </h1>
         <p className="text-xl text-muted-foreground">Discover your perfect connections</p>
       </div>
 
@@ -136,7 +142,7 @@ export default function Matches() {
                   {showNetwork && <NetworkGraph />}
                 </div>
               </div>
-              
+
               <h2 className="text-2xl font-semibold mb-6 text-center">Your Match Cards</h2>
               <div 
                 ref={cardsRef} 
@@ -152,7 +158,9 @@ export default function Matches() {
           ) : (
             <div className="text-center py-16">
               <Users className="h-16 w-16 mx-auto mb-6 text-muted-foreground" />
-              <p className="text-xl text-muted-foreground mb-8">No matches found yet. Keep exploring to find compatible friends!</p>
+              <p className="text-xl text-muted-foreground mb-8">
+                No matches found yet. Keep exploring to find compatible friends!
+              </p>
               <Button asChild size="lg">
                 <Link href="/explore">Explore More</Link>
               </Button>
