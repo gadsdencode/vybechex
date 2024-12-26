@@ -1,10 +1,9 @@
-
 import { CopilotRuntime, OpenAIAdapter, copilotRuntimeNodeHttpEndpoint } from '@copilotkit/runtime';
 import type { Request, Response, NextFunction } from 'express';
 
 export function setupCopilotKitEndpoint() {
 	const serviceAdapter = new OpenAIAdapter({
-		apiKey: process.env.OPENAI_API_KEY,
+		openAIApiKey: process.env.OPENAI_API_KEY,
 		model: 'gpt-4'
 	});
 	
