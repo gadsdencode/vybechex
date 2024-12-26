@@ -1,4 +1,3 @@
-
 import Stripe from 'stripe';
 import { Router } from 'express';
 import { validateUser } from './middleware/auth';
@@ -17,8 +16,8 @@ const router = Router();
 
 router.post('/create-subscription', validateUser, async (req, res) => {
   try {
-    if (!SUBSCRIPTION_PRICE_ID) {
-      throw new Error('STRIPE_PRICE_ID must be set');
+    if (!process.env.STRIPE_PRICE_ID) {
+      throw new Error('STRIPE_PRICE_ID is not configured');
     }
 
     if (!req.user?.stripeCustomerId) {
