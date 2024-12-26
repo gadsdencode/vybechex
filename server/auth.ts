@@ -15,15 +15,19 @@ const scryptAsync = promisify(scrypt);
 
 // Initialize Stripe with proper error handling
 let stripe: Stripe | null = null;
-try {
-  if (!process.env.STRIPE_SECRET_KEY) {
-    throw new Error('STRIPE_SECRET_KEY must be set');
+if (process.env.STRIPE_SECRET_KEY) {
+  try {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2023-10-16',
+      typescript: true
+    });
+    console.log('Stripe initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize Stripe:', error);
+    // Continue without Stripe - application can still function
   }
-  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-    apiVersion: '2023-10-16'
-  });
-} catch (error) {
-  console.error('Failed to initialize Stripe:', error);
+} else {
+  console.warn('STRIPE_SECRET_KEY not set - Stripe features will be disabled');
 }
 
 const loginSchema = z.object({
@@ -297,20 +301,30 @@ export async function setupAuth(app: Express) {
 
       const hashedPassword = await crypto.hash(password);
       
-      // Create Stripe customer
-      const customer = await stripe.customers.create({
-        email: username,
-        metadata: {
-          username: username
+      let stripeCustomerId = null;
+      
+      try {
+        // Only attempt to create Stripe customer if stripe is initialized
+        if (stripe) {
+          const customer = await stripe.customers.create({
+            email: username,
+            metadata: {
+              username: username
+            }
+          });
+          stripeCustomerId = customer.id;
         }
-      });
+      } catch (stripeError) {
+        console.error('Stripe customer creation failed:', stripeError);
+        // Continue with user creation even if Stripe fails
+      }
 
       const [newUser] = await db
         .insert(users)
         .values({
           username,
           password: hashedPassword,
-          stripeCustomerId: customer.id,
+          stripeCustomerId,
         })
         .returning();
 
