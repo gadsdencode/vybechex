@@ -2,6 +2,7 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
+import { setupCopilotKit } from "./copilotkit";
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -48,6 +49,10 @@ app.use((req, res, next) => {
     // Initialize authentication first
     await setupAuth(app);
     console.log("Authentication system initialized");
+
+    // Setup CopilotKit
+    setupCopilotKit(app);
+    console.log("CopilotKit initialized");
 
     // Register API routes before Vite/static middleware
     const server = registerRoutes(app);

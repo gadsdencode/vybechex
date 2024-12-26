@@ -1,5 +1,4 @@
 
-import { createServer } from 'node:http';
 import {
   CopilotRuntime,
   OpenAIAdapter,
@@ -10,19 +9,16 @@ if (!process.env.OPENAI_API_KEY) {
   throw new Error('OPENAI_API_KEY environment variable is required');
 }
 
-const serviceAdapter = new OpenAIAdapter();
-
-const server = createServer((req, res) => {
+export function setupCopilotKit(app: any) {
   const runtime = new CopilotRuntime();
+  const serviceAdapter = new OpenAIAdapter();
   const handler = copilotRuntimeNodeHttpEndpoint({
     endpoint: '/copilotkit',
     runtime,
     serviceAdapter,
   });
 
-  return handler(req, res);
-});
-
-server.listen(4000, '0.0.0.0', () => {
-  console.log('CopilotKit server listening at http://0.0.0.0:4000/copilotkit');
-});
+  app.all('/copilotkit*', (req: any, res: any) => {
+    return handler(req, res);
+  });
+}
