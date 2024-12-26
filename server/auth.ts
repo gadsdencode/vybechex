@@ -9,6 +9,15 @@ import { users, matches, insertUserSchema, type SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq, or, and } from "drizzle-orm";
 import { z } from "zod";
+import Stripe from 'stripe';
+
+if (!process.env.STRIPE_SECRET_KEY) {
+  throw new Error('STRIPE_SECRET_KEY must be set');
+}
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+  apiVersion: '2023-10-16'
+});
 
 const scryptAsync = promisify(scrypt);
 
