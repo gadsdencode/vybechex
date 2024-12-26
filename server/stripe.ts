@@ -11,7 +11,57 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
   apiVersion: '2023-10-16'
 });
 
+const SUBSCRIPTION_PRICE_ID = process.env.STRIPE_PRICE_ID;
+
 const router = Router();
+
+router.post('/create-subscription', validateUser, async (req, res) => {
+  try {
+    const session = await stripe.checkout.sessions.create({
+      mode: 'subscription',
+      payment_method_types: ['card'],
+      line_items: [{
+        price: SUBSCRIPTION_PRICE_ID,
+        quantity: 1,
+      }],
+      success_url: `${req.headers.origin}/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${req.headers.origin}/payment-cancelled`,
+    });
+
+    res.json({ 
+      success: true,
+      sessionId: session.id,
+      url: session.url 
+    });
+  } catch (error) {
+    console.error('Subscription creation error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to create subscription'
+    });
+  }
+});
+
+router.get('/subscription-status', validateUser, async (req, res) => {
+  try {
+    const subscriptions = await stripe.subscriptions.list({
+      customer: req.user.stripeCustomerId,
+      status: 'active',
+      limit: 1,
+    });
+
+    res.json({
+      success: true,
+      hasActiveSubscription: subscriptions.data.length > 0
+    });
+  } catch (error) {
+    console.error('Subscription status error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to check subscription status'
+    });
+  }
+});
 
 router.post('/create-payment-intent', validateUser, async (req, res) => {
   try {

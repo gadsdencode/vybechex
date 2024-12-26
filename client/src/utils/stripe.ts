@@ -13,6 +13,40 @@ export const getStripe = () => {
   return stripePromise;
 };
 
+export const createSubscription = async () => {
+  try {
+    const response = await fetch('/api/create-subscription', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Subscription request failed');
+    }
+
+    const { url } = await response.json();
+    window.location.href = url;
+  } catch (error) {
+    console.error('Subscription error:', error);
+    throw error;
+  }
+};
+
+export const checkSubscriptionStatus = async () => {
+  try {
+    const response = await fetch('/api/subscription-status');
+    if (!response.ok) {
+      throw new Error('Failed to check subscription status');
+    }
+    return response.json();
+  } catch (error) {
+    console.error('Subscription status check error:', error);
+    throw error;
+  }
+};
+
 export const createPayment = async (amount: number) => {
   try {
     const response = await fetch('/api/create-payment-intent', {
