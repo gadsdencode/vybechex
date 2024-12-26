@@ -3,6 +3,7 @@ import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
 import { setupCopilotKit } from "./copilotkit";
+import { stripeRouter } from "./stripe";
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -11,6 +12,7 @@ const app = express();
 // Basic middleware setup - before auth to ensure body parsing is available
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+app.use('/api', stripeRouter);
 
 app.use("/copilotkit", express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), './copilotkit')));
 
