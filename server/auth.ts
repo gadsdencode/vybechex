@@ -282,12 +282,21 @@ export async function setupAuth(app: Express) {
       }
 
       const hashedPassword = await crypto.hash(password);
+      
+      // Create Stripe customer
+      const customer = await stripe.customers.create({
+        email: username,
+        metadata: {
+          username: username
+        }
+      });
 
       const [newUser] = await db
         .insert(users)
         .values({
           username,
           password: hashedPassword,
+          stripeCustomerId: customer.id,
         })
         .returning();
 
