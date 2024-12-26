@@ -11,15 +11,20 @@ import { eq, or, and } from "drizzle-orm";
 import { z } from "zod";
 import Stripe from 'stripe';
 
-if (!process.env.STRIPE_SECRET_KEY) {
-  throw new Error('STRIPE_SECRET_KEY must be set');
-}
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16'
-});
-
 const scryptAsync = promisify(scrypt);
+
+// Initialize Stripe with proper error handling
+let stripe: Stripe | null = null;
+try {
+  if (!process.env.STRIPE_SECRET_KEY) {
+    throw new Error('STRIPE_SECRET_KEY must be set');
+  }
+  stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+    apiVersion: '2023-10-16'
+  });
+} catch (error) {
+  console.error('Failed to initialize Stripe:', error);
+}
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
