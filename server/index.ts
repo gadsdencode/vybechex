@@ -2,6 +2,8 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 
@@ -9,7 +11,7 @@ const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 
-app.use("/copilotkit", express.static(path.join(__dirname, '../public')));
+app.use("/copilotkit", express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), './copilotkit')));
 
 // Request logging middleware
 app.use((req, res, next) => {
