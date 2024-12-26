@@ -17,7 +17,16 @@ const router = Router();
 
 router.post('/create-subscription', validateUser, async (req, res) => {
   try {
+    if (!SUBSCRIPTION_PRICE_ID) {
+      throw new Error('STRIPE_PRICE_ID must be set');
+    }
+
+    if (!req.user?.stripeCustomerId) {
+      throw new Error('User has no Stripe customer ID');
+    }
+
     const session = await stripe.checkout.sessions.create({
+      customer: req.user.stripeCustomerId,
       mode: 'subscription',
       payment_method_types: ['card'],
       line_items: [{
@@ -37,7 +46,7 @@ router.post('/create-subscription', validateUser, async (req, res) => {
     console.error('Subscription creation error:', error);
     res.status(500).json({
       success: false,
-      message: 'Failed to create subscription'
+      message: error instanceof Error ? error.message : 'Failed to create subscription'
     });
   }
 });
