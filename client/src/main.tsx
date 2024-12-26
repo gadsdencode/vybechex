@@ -15,7 +15,7 @@ createRoot(document.getElementById("root")!).render(
   <StrictMode>
     <QueryClientProvider client={queryClient}>
       <ThemeProvider defaultTheme="system" storageKey="vibe-ui-theme">
-      <CopilotKit runtimeUrl="/api/copilotkit"> 
+      <CopilotKit runtimeUrl="/copilotkit"> 
         <App />
         <CopilotPopup
         instructions={"You are assisting the user as best as you can. Answer in the best way possible given the data you have."}
