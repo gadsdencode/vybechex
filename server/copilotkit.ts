@@ -31,8 +31,22 @@ export function setupCopilotKitEndpoint() {
 				throw new Error('No response from CopilotKit handler');
 			}
 			
-			const data = await response.json();
-			res.json(data);
+			const text = await response.text();
+			if (!text) {
+				res.json({ message: 'No content' });
+				return;
+			}
+
+			try {
+				const data = JSON.parse(text);
+				res.json(data);
+			} catch (parseError) {
+				console.error('Failed to parse response:', text);
+				res.status(500).json({ 
+					error: 'Invalid response format',
+					details: text.substring(0, 100) // Log first 100 chars of response
+				});
+			}
 		} catch (error) {
 			console.error('CopilotKit error:', error);
 			res.status(500).json({ error: 'Internal server error' });
