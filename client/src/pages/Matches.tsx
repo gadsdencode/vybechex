@@ -12,170 +12,187 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { MatchRequests } from "@/components/match-requests";
 import gsap from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { Heart, Zap } from 'lucide-react';
 
 gsap.registerPlugin(ScrollTrigger);
 
 export default function Matches() {
-  const { user, isLoading: isUserLoading } = useUser();
-  const { matches, requests, isLoading: isMatchesLoading, isResponding, respondToMatch } = useMatches();
-  const [showNetwork, setShowNetwork] = useState(false);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const networkRef = useRef<HTMLDivElement>(null);
-  const cardsRef = useRef<HTMLDivElement>(null);
+  const { matches, requests, isLoading, respondToMatch, isResponding } = useMatches();
+  const { user, isLoading: isLoadingUser } = useUser();
 
-  const isLoading = isUserLoading || isMatchesLoading;
+  console.log('User data:', user);
+  console.log('Raw matches data:', matches);
+  console.log('Raw requests data:', requests);
 
-  useEffect(() => {
-    if (!isLoading && matches?.length > 0 && headerRef.current && networkRef.current && cardsRef.current) {
-      const ctx = gsap.context(() => {
-        gsap.set([headerRef.current, networkRef.current, cardsRef.current!.children], {
-          autoAlpha: 1
-        });
+  // Ensure we have arrays even if matches is undefined
+  const acceptedMatches = matches?.filter(match => match.status === 'accepted') || [];
+  const potentialMatches = matches?.filter(match => match.status === 'potential') || [];
 
-        gsap.from(headerRef.current, {
-          autoAlpha: 0,
-          y: -20,
-          duration: 0.5,
-          clearProps: "all"
-        });
+  console.log('Filtered accepted matches:', acceptedMatches);
+  console.log('Filtered potential matches:', potentialMatches);
 
-        gsap.from(networkRef.current, {
-          autoAlpha: 0,
-          duration: 0.5,
-          clearProps: "all"
-        });
-
-        if (cardsRef.current?.children) {
-          gsap.from(cardsRef.current.children, {
-            autoAlpha: 0,
-            y: 20,
-            duration: 0.5,
-            stagger: 0.1,
-            clearProps: "all"
-          });
-        }
-      });
-
-      return () => ctx.revert();
-    }
-  }, [isLoading, matches]);
-
-  if (isLoading) {
+  // Show loading state while either matches or user data is loading
+  if (isLoading || isLoadingUser) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh]">
-        <Loader2 className="h-12 w-12 animate-spin text-primary mb-4" />
-        <p className="text-lg text-muted-foreground animate-pulse">
-          Loading matches...
-        </p>
+      <div className="flex items-center justify-center min-h-[50vh]">
+        <Loader2 className="h-8 w-8 animate-spin text-primary" />
       </div>
     );
   }
 
+  // Show login prompt if no user
   if (!user) {
     return (
-      <div className="flex flex-col items-center justify-center min-h-[50vh]">
-        <p className="text-lg text-muted-foreground">
-          Please log in to view your matches
-        </p>
-      </div>
-    );
-  }
-
-  if (!user.quizCompleted) {
-    return (
-      <div className="max-w-4xl mx-auto text-center py-16 px-4">
-        <Users className="h-16 w-16 mx-auto mb-6 text-primary animate-bounce" />
-        <h1 className="text-4xl font-bold mb-4 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-          Complete Your Profile
-        </h1>
-        <p className="text-xl text-muted-foreground mb-8">
-          Take our personality quiz to unlock a world of compatible friends!
-        </p>
-        <Button asChild size="lg" className="animate-pulse">
-          <Link href="/quiz">Take the Quiz</Link>
+      <div className="flex items-center justify-center min-h-[50vh] flex-col gap-4">
+        <p className="text-muted-foreground">Please log in to view matches</p>
+        <Button asChild>
+          <Link href="/login">Log In</Link>
         </Button>
       </div>
     );
   }
 
+  // Show profile completion prompt if quiz not completed
+  if (!user.quizCompleted) {
+    return (
+      <div className="flex items-center justify-center min-h-[50vh] flex-col gap-4">
+        <p className="text-muted-foreground">Complete your profile to start matching!</p>
+        <Button asChild>
+          <Link href="/profile">Complete Profile</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  // Show empty state if no matches
+  if (!matches || matches.length === 0) {
+    return (
+      <div className="container mx-auto px-4 py-8">
+        <div className="flex justify-between items-center mb-8">
+          <div>
+            <h1 className="text-3xl font-bold mb-2">Your Matches</h1>
+            <p className="text-muted-foreground">
+              Find and connect with compatible friends
+            </p>
+          </div>
+          <Button asChild className="flex items-center gap-2">
+            <Link href="/matches/create">
+              <Heart className="h-4 w-4" />
+              Create Match
+            </Link>
+          </Button>
+        </div>
+
+        <div className="text-center py-12">
+          <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+          <h3 className="text-lg font-semibold mb-2">Start Your Matching Journey</h3>
+          <p className="text-muted-foreground mb-4">
+            Create your first match to start connecting with compatible friends!
+          </p>
+          <Button asChild>
+            <Link href="/matches/create">Create Your First Match</Link>
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="max-w-6xl mx-auto px-4 py-12">
-      <div ref={headerRef} className="text-center mb-12">
-        <h1 className="text-5xl font-bold mb-4 bg-gradient-to-r from-primary to-secondary bg-clip-text text-transparent">
-          Your Matches
-        </h1>
-        <p className="text-xl text-muted-foreground">Discover your perfect connections</p>
+    <div className="container mx-auto px-4 py-8">
+      <div className="flex justify-between items-center mb-8">
+        <div>
+          <h1 className="text-3xl font-bold mb-2">Your Matches</h1>
+          <p className="text-muted-foreground">
+            Find and connect with compatible friends
+          </p>
+        </div>
+        <Button asChild className="flex items-center gap-2">
+          <Link href="/matches/create">
+            <Heart className="h-4 w-4" />
+            Create Match
+          </Link>
+        </Button>
       </div>
 
-      <Tabs defaultValue="matches" className="mb-16">
-        <TabsList className="mx-auto">
+      {requests && requests.length > 0 && (
+        <div className="mb-8">
+          <MatchRequests
+            requests={requests}
+            onRespond={respondToMatch}
+            isResponding={isResponding}
+          />
+        </div>
+      )}
+
+      <Tabs defaultValue="matches" className="w-full">
+        <TabsList className="mb-4">
           <TabsTrigger value="matches">
-            Matches
-            {matches?.length > 0 && (
-              <span className="ml-2 bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs">
-                {matches.length}
-              </span>
-            )}
+            Current Matches ({acceptedMatches.length})
           </TabsTrigger>
-          <TabsTrigger value="requests">
-            Requests
-            {requests?.length > 0 && (
-              <span className="ml-2 bg-primary/10 text-primary rounded-full px-2 py-0.5 text-xs">
-                {requests.length}
-              </span>
-            )}
+          <TabsTrigger value="potential">
+            Potential Matches ({potentialMatches.length})
           </TabsTrigger>
         </TabsList>
 
         <TabsContent value="matches">
-          {matches && matches.length > 0 ? (
-            <>
-              <div ref={networkRef} className="mb-16">
-                <h2 className="text-2xl font-semibold mb-6 text-center">Your Connection Network</h2>
-                <div className="bg-card rounded-xl shadow-lg p-6 overflow-hidden">
-                  <Button 
-                    onClick={() => setShowNetwork(!showNetwork)} 
-                    className="mb-4 mx-auto block"
-                  >
-                    {showNetwork ? "Hide Network" : "Show Network"}
-                  </Button>
-                  {showNetwork && <NetworkGraph />}
-                </div>
-              </div>
-
-              <h2 className="text-2xl font-semibold mb-6 text-center">Your Match Cards</h2>
-              <div 
-                ref={cardsRef} 
-                className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 min-h-[200px] relative px-2"
-              >
-                {matches.map((match) => (
-                  <div key={match.id} className="opacity-100">
-                    <MatchCard match={match} />
-                  </div>
-                ))}
-              </div>
-            </>
-          ) : (
-            <div className="text-center py-16">
-              <Users className="h-16 w-16 mx-auto mb-6 text-muted-foreground" />
-              <p className="text-xl text-muted-foreground mb-8">
-                No matches found yet. Keep exploring to find compatible friends!
+          {acceptedMatches.length === 0 ? (
+            <div className="text-center py-12">
+              <Heart className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Matches Yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Start by exploring potential matches or create a new match!
               </p>
-              <Button asChild size="lg">
-                <Link href="/explore">Explore More</Link>
+              <Button asChild>
+                <Link href="/matches/create">Create Match</Link>
               </Button>
+            </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {acceptedMatches.map((match) => (
+                <MatchCard 
+                  key={match.id} 
+                  match={match} 
+                />
+              ))}
             </div>
           )}
         </TabsContent>
 
-        <TabsContent value="requests" className="min-h-[200px]">
-          <MatchRequests
-            requests={requests || []}
-            isResponding={isResponding}
-            onRespond={(matchId, status) => respondToMatch({ matchId, status })}
-          />
+        <TabsContent value="potential">
+          {potentialMatches.length === 0 ? (
+            <div className="text-center py-12">
+              <Users className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Potential Matches</h3>
+              <p className="text-muted-foreground mb-4">
+                Create a new match to find compatible friends!
+              </p>
+              <Button asChild>
+                <Link href="/matches/create">Create Match</Link>
+              </Button>
+            </div>
+          ) : (
+            <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+              {potentialMatches.map((match) => (
+                <MatchCard 
+                  key={match.id} 
+                  match={match} 
+                  isPotential={true}
+                />
+              ))}
+            </div>
+          )}
         </TabsContent>
       </Tabs>
+
+      {(acceptedMatches.length > 0 || potentialMatches.length > 0) && (
+        <div className="mt-12 w-full">
+          <NetworkGraph
+            matches={[...acceptedMatches, ...potentialMatches]}
+            userId={user?.id || 0}
+            visible={true}
+          />
+        </div>
+      )}
     </div>
   );
 }

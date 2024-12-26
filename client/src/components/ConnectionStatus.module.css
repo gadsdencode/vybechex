@@ -1,0 +1,22 @@
+.connectionStatus {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+    transition: all 0.3s ease;
+  }
+  
+  .connected {
+    background-color: var(--success);
+    color: var(--success-foreground);
+  }
+  
+  .disconnected {
+    background-color: var(--destructive);
+    color: var(--destructive-foreground);
+  }
+  
+  

@@ -106,7 +106,7 @@ export const matches = pgTable("matches", {
   userId1: integer("user_id_1").notNull().references(() => users.id, { onDelete: 'cascade' }),
   userId2: integer("user_id_2").notNull().references(() => users.id, { onDelete: 'cascade' }),
   score: integer("score").default(0).notNull(),
-  status: text("status", { enum: ['requested', 'pending', 'accepted', 'rejected'] })
+  status: text("status", { enum: ['requested', 'pending', 'accepted', 'rejected', 'potential'] })
     .notNull()
     .default("requested"),
   createdAt: timestamp("created_at").defaultNow().notNull(),

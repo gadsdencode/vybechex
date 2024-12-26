@@ -2,12 +2,17 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
+import { setupCopilotKit } from "./copilotkit";
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const app = express();
 
 // Basic middleware setup - before auth to ensure body parsing is available
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+app.use("/copilotkit", express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), './copilotkit')));
 
 // Request logging middleware
 app.use((req, res, next) => {
@@ -45,7 +50,11 @@ app.use((req, res, next) => {
     await setupAuth(app);
     console.log("Authentication system initialized");
 
-    // Register routes after auth setup
+    // Setup CopilotKit
+    setupCopilotKit(app);
+    console.log("CopilotKit initialized");
+
+    // Register API routes before Vite/static middleware
     const server = registerRoutes(app);
 
     // Global error handler
@@ -57,17 +66,23 @@ app.use((req, res, next) => {
         timestamp: new Date().toISOString()
       });
 
+      // Don't send error stack in production
       const status = err.status || err.statusCode || 500;
       const message = err.message || "Internal Server Error";
 
-      res.status(status).json({
-        success: false,
-        message: app.get('env') === 'development' ? message : 'Internal Server Error',
-        ...(app.get('env') === 'development' && { stack: err.stack })
-      });
+      // Send JSON response for API routes, HTML for others
+      if (_req.path.startsWith('/api')) {
+        res.status(status).json({
+          success: false,
+          message: app.get('env') === 'development' ? message : 'Internal Server Error',
+          ...(app.get('env') === 'development' && { stack: err.stack })
+        });
+      } else {
+        res.status(status).send(message);
+      }
     });
 
-    // Setup Vite or static serving
+    // Setup Vite or static serving AFTER API routes
     if (app.get("env") === "development") {
       await setupVite(app, server);
     } else {

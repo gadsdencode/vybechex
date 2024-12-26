@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useUser } from "@/hooks/use-user";
-import { useMatches } from "@/hooks/use-matches";
+import { useMatches, type Match } from "@/hooks/use-matches";
 import type { User } from "@db/schema";
 import { Button } from "@/components/ui/button";
 import {
@@ -71,51 +71,158 @@ type PersonalityTraits = {
 
 export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel }: CreateMatchWizardProps) {
   const [step, setStep] = useState(1);
+  const [selectedMatchId, setSelectedMatchId] = useState<number | null>(
+    initialMatchId ? parseInt(initialMatchId, 10) : null
+  );
   const { user } = useUser();
   const { connect } = useMatches();
   const { toast } = useToast();
   const [, setLocation] = useLocation();
   const totalSteps = 3;
 
-  const { data: potentialMatch } = useQuery({
+  // Validate initialMatchId when it changes
+  useEffect(() => {
+    if (initialMatchId) {
+      const parsedId = parseInt(initialMatchId, 10);
+      if (!isNaN(parsedId) && parsedId > 0) {
+        setSelectedMatchId(parsedId);
+      } else {
+        console.error('Invalid initial match ID:', initialMatchId);
+        setSelectedMatchId(null);
+      }
+    }
+  }, [initialMatchId]);
+
+  // Query for all potential matches
+  const { data: potentialMatches, isLoading: loadingMatches, error: matchesError } = useQuery({
+    queryKey: ['potential-matches'],
+    queryFn: async () => {
+      console.log('Fetching potential matches...');
+      const response = await fetch('/api/matches/potential', {
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        console.error('Failed to fetch potential matches:', errorData);
+        throw new Error(errorData.message || 'Failed to fetch potential matches');
+      }
+
+      const data = await response.json();
+      console.log('Potential matches response:', data);
+
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to fetch potential matches');
+      }
+
+      return data.matches || [];
+    },
+    enabled: step === 2 && !!user?.quizCompleted,
+    staleTime: 30000,
+    retry: 1,
+    gcTime: 0,
+    meta: {
+      errorMessage: "Failed to load potential matches"
+    }
+  });
+
+  // Handle potential matches error
+  useEffect(() => {
+    if (matchesError) {
+      console.error('Error fetching potential matches:', matchesError);
+      toast({
+        title: "Error",
+        description: matchesError instanceof Error ? matchesError.message : "Failed to load potential matches",
+        variant: "destructive"
+      });
+    }
+  }, [matchesError, toast]);
+
+  // Query for specific match details if editing
+  const { data: potentialMatch, error: potentialMatchError } = useQuery({
     queryKey: ['potential-match', initialMatchId],
     queryFn: async () => {
       const response = await fetch(`/api/users/${initialMatchId}`, {
-        credentials: 'include'
+        credentials: 'include',
+        headers: {
+          'Accept': 'application/json',
+          'Cache-Control': 'no-cache'
+        }
       });
+
       if (!response.ok) {
-        throw new Error('Failed to fetch potential match');
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.message || 'Failed to fetch potential match');
       }
-      return response.json();
+
+      const data = await response.json();
+      if (!data.success) {
+        throw new Error(data.message || 'Failed to fetch potential match');
+      }
+
+      return data.user || null;
     },
     enabled: !!initialMatchId && step > 1,
     staleTime: 30000,
+    retry: 1,
+    gcTime: 0
   });
 
+  // Handle potential match error
+  useEffect(() => {
+    if (potentialMatchError) {
+      console.error('Error fetching potential match:', potentialMatchError);
+      toast({
+        title: "Error",
+        description: potentialMatchError instanceof Error ? potentialMatchError.message : "Failed to load match details",
+        variant: "destructive"
+      });
+    }
+  }, [potentialMatchError, toast]);
+
+  // Get the current match being previewed
+  const currentMatch = useMemo(() => {
+    if (potentialMatch) return potentialMatch;
+    if (!selectedMatchId || !potentialMatches) return null;
+    return potentialMatches.find((m: Match) => m.id === selectedMatchId);
+  }, [potentialMatch, selectedMatchId, potentialMatches]);
+
+  useEffect(() => {
+    // Check if user has completed the quiz when entering step 2
+    if (step === 2 && !user?.quizCompleted) {
+      toast({
+        title: "Quiz Required",
+        description: "Please complete your personality quiz before matching.",
+        variant: "destructive"
+      });
+      setStep(1);
+    }
+  }, [step, user?.quizCompleted]);
+
+  // Form setup with default values
   const form = useForm<WizardFormData>({
     resolver: zodResolver(wizardSchema),
     defaultValues: {
-      interests: {
-        extraversion: 0.5,
-        communication: 0.5,
-        openness: 0.5,
-        values: 0.5,
-        planning: 0.5,
-        sociability: 0.5,
-      },
-    },
-    mode: 'onChange',
+      interests: interestFields.reduce(
+        (acc, field) => ({ ...acc, [field]: 0.5 }),
+        {} as Record<InterestField, number>
+      )
+    }
   });
 
   const progress = (step / totalSteps) * 100;
 
   const calculateCompatibility = () => {
-    if (!potentialMatch?.personalityTraits || !form.getValues().interests) {
+    if (!currentMatch?.personalityTraits || !form.getValues().interests) {
       return 0;
     }
 
     const userTraits = form.getValues().interests;
-    const matchTraits = potentialMatch.personalityTraits;
+    const matchTraits = currentMatch.personalityTraits;
     let score = 0;
     let count = 0;
 
@@ -145,6 +252,20 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
     }
   };
 
+  const handleMatchSelect = (match: Match) => {
+    if (!match.id || isNaN(match.id) || match.id <= 0) {
+      console.error('Invalid match ID:', match.id);
+      toast({
+        title: "Error",
+        description: "Invalid match selection",
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setSelectedMatchId(match.id);
+  };
+
   const handleFormSubmit = async (data: WizardFormData) => {
     if (step !== totalSteps) {
       return;
@@ -155,52 +276,54 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
         throw new Error("You must be logged in to create a match");
       }
 
-   
-      if (!initialMatchId || isNaN(Number(initialMatchId)) || Number(initialMatchId) <= 0) {
-        throw new Error("Invalid match ID. Please provide a valid positive number.");
+      if (!selectedMatchId || isNaN(selectedMatchId) || selectedMatchId <= 0) {
+        throw new Error("Please select a valid match");
       }
 
-      const response = await connect({
-        id: initialMatchId
+      // Create the match
+      const match = await connect(selectedMatchId);
+
+      toast({
+        title: "Match Request Sent",
+        description: "Your match request has been sent successfully!"
       });
 
-      if (response.status === 'requested') {
-        toast({
-          title: "Request Sent",
-          description: "Your connection request has been sent. We'll notify you as soon as they respond!",
-          variant: "default",
-          duration: 2500
-        });
+      if (match.status === 'accepted') {
+        setLocation(`/chat/${match.id}`);
       }
 
-      if (response.status === 'accepted') {
-        setLocation(`/chat/${initialMatchId}`);
-      }
-      
       onComplete();
-    } catch (error: any) {
+    } catch (error) {
       console.error('Error creating match:', error);
       
-      if (error.message.includes('already exists')) {
-        toast({
-          title: "Match Exists",
-          description: "You already have a match with this user.",
-          variant: "default",
-        });
-        setLocation(`/chat/${initialMatchId}`);
-        onComplete();
-      } else if (error.message.includes('not found')) {
-        toast({
-          title: "User Not Found",
-          description: "This user is no longer available for matching.",
-          variant: "destructive",
-        });
-        onCancel();
+      if (error instanceof Error) {
+        if (error.message.includes('already exists')) {
+          toast({
+            title: "Match Exists",
+            description: "You already have a match with this user.",
+            variant: "default",
+          });
+          setLocation(`/chat/${selectedMatchId}`);
+          onComplete();
+        } else if (error.message.includes('not found')) {
+          toast({
+            title: "User Not Found",
+            description: "This user is no longer available for matching.",
+            variant: "destructive",
+          });
+          onCancel();
+        } else {
+          toast({
+            title: "Error",
+            description: error.message,
+            variant: "destructive"
+          });
+        }
       } else {
         toast({
           title: "Error",
-          description: error.message || "Failed to create match",
-          variant: "destructive",
+          description: "An unexpected error occurred",
+          variant: "destructive"
         });
       }
     }
@@ -256,82 +379,101 @@ export default function CreateMatchWizard({ initialMatchId, onComplete, onCancel
 
             {step === 2 && (
               <div className="space-y-6">
-                <h3 className="text-lg font-medium">Preview Your Potential Match</h3>
-                {potentialMatch ? (
-                  <div className="space-y-4">
-                    <div className="flex items-center space-x-4">
-                      <Avatar className="h-20 w-20">
-                        <AvatarImage src={potentialMatch.avatar || "/default-avatar.png"} alt={potentialMatch.name} />
-                        <AvatarFallback>{potentialMatch.name?.[0]}</AvatarFallback>
-                      </Avatar>
-                      <div>
-                        <h4 className="text-xl font-semibold">{potentialMatch.name}</h4>
-                        <p className="text-muted-foreground">{potentialMatch.bio || "No bio available"}</p>
-                      </div>
-                    </div>
-
-                    <div className="bg-muted p-4 rounded-lg">
-                      <h5 className="font-medium mb-2">Compatibility Score</h5>
-                      <div className="flex items-center space-x-2">
-                        <Progress value={calculateCompatibility()} className="flex-1" />
-                        <span className="text-sm font-medium">{calculateCompatibility()}%</span>
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-4">
-                      {interestFields.map((trait) => (
-                        <div key={trait} className="bg-muted p-3 rounded-lg">
-                          <div className="text-sm font-medium mb-1">{formatTrait(trait)}</div>
-                          <div className="flex items-center space-x-2">
-                            <Progress 
-                              value={potentialMatch.personalityTraits[trait] * 100} 
-                              className="flex-1" 
-                            />
-                            <span className="text-xs">
-                              {Math.round(potentialMatch.personalityTraits[trait] * 100)}%
-                            </span>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : (
+                <h3 className="text-lg font-medium">Choose Your Potential Match</h3>
+                {loadingMatches ? (
                   <div className="flex items-center justify-center h-40">
                     <Loader2 className="h-8 w-8 animate-spin text-primary" />
                   </div>
+                ) : matchesError ? (
+                  <Alert variant="destructive">
+                    <AlertTitle>Error</AlertTitle>
+                    <AlertDescription>
+                      {matchesError instanceof Error ? matchesError.message : 'Failed to load potential matches'}
+                    </AlertDescription>
+                  </Alert>
+                ) : !user?.quizCompleted ? (
+                  <Alert>
+                    <AlertTitle>Quiz Required</AlertTitle>
+                    <AlertDescription>
+                      Please complete your personality quiz before viewing potential matches.
+                    </AlertDescription>
+                  </Alert>
+                ) : potentialMatches?.length ? (
+                  <div className="space-y-4">
+                    {potentialMatches.map((match: any) => (
+                      <div
+                        key={match.id}
+                        className={`p-4 rounded-lg border cursor-pointer transition-colors ${
+                          selectedMatchId === match.id
+                            ? 'border-primary bg-primary/5'
+                            : 'border-border hover:border-primary/50'
+                        }`}
+                        onClick={() => setSelectedMatchId(match.id)}
+                      >
+                        <div className="flex items-center space-x-4">
+                          <Avatar className="h-16 w-16">
+                            <AvatarImage src={match.avatar || "/default-avatar.png"} alt={match.name} />
+                            <AvatarFallback>{match.name?.[0]}</AvatarFallback>
+                          </Avatar>
+                          <div className="flex-1">
+                            <h4 className="text-lg font-semibold">{match.name}</h4>
+                            <p className="text-sm text-muted-foreground">{match.bio}</p>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <Alert>
+                    <AlertTitle>No potential matches found</AlertTitle>
+                    <AlertDescription>
+                      We couldn't find any potential matches at the moment. Please try again later.
+                    </AlertDescription>
+                  </Alert>
                 )}
               </div>
             )}
 
-            {step === 3 && (
+            {step === 3 && selectedMatchId && currentMatch && (
               <div className="space-y-6">
-                <h3 className="text-lg font-medium">Confirm Your Match</h3>
-                {potentialMatch && (
-                  <div className="space-y-4">
-                    <Alert>
-                      <AlertTitle>You're about to connect with {potentialMatch.name}</AlertTitle>
-                      <AlertDescription>
-                        Based on your preferences, you have a {calculateCompatibility()}% compatibility match.
-                        This will create a new connection and allow you to start chatting.
-                      </AlertDescription>
-                    </Alert>
-
-                    <div className="bg-muted p-4 rounded-lg">
-                      <h4 className="font-medium mb-2">Your Selected Preferences</h4>
-                      <div className="grid grid-cols-2 gap-4">
-                        {interestFields.map((trait) => (
-                          <div key={trait} className="space-y-1">
-                            <div className="text-sm font-medium">{formatTrait(trait)}</div>
-                            <Progress 
-                              value={form.getValues().interests[trait] * 100} 
-                              className="h-2" 
-                            />
-                          </div>
-                        ))}
-                      </div>
+                <h3 className="text-lg font-medium">Preview Your Match</h3>
+                <div className="space-y-4">
+                  <div className="flex items-center space-x-4">
+                    <Avatar className="h-20 w-20">
+                      <AvatarImage src={currentMatch.avatar || "/default-avatar.png"} alt={currentMatch.name} />
+                      <AvatarFallback>{currentMatch.name?.[0]}</AvatarFallback>
+                    </Avatar>
+                    <div>
+                      <h4 className="text-xl font-semibold">{currentMatch.name}</h4>
+                      <p className="text-muted-foreground">{currentMatch.matchExplanation}</p>
                     </div>
                   </div>
-                )}
+
+                  <div className="bg-muted p-4 rounded-lg">
+                    <h5 className="font-medium mb-2">Compatibility Score</h5>
+                    <div className="flex items-center space-x-2">
+                      <Progress value={currentMatch.compatibilityScore * 100} className="flex-1" />
+                      <span className="text-sm font-medium">{Math.round(currentMatch.compatibilityScore * 100)}%</span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4">
+                    {interestFields.map((trait) => (
+                      <div key={trait} className="bg-muted p-3 rounded-lg">
+                        <div className="text-sm font-medium mb-1">{formatTrait(trait)}</div>
+                        <div className="flex items-center space-x-2">
+                          <Progress 
+                            value={currentMatch.personalityTraits[trait] * 100} 
+                            className="flex-1" 
+                          />
+                          <span className="text-xs">
+                            {Math.round(currentMatch.personalityTraits[trait] * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
               </div>
             )}
           </CardContent>
@@ -369,7 +511,7 @@ function getStepDescription(step: number): string {
     case 1:
       return "Set Your Preferences";
     case 2:
-      return "Preview Your Match";
+      return "Choose Your Match";
     case 3:
       return "Confirm Connection";
     default:

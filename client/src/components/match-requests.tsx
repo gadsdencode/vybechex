@@ -10,37 +10,58 @@ import { toast } from '@/hooks/use-toast';
 interface MatchRequestsProps {
   requests: Match[];
   isResponding: boolean;
-  onRespond: (matchId: number, status: 'accepted' | 'rejected') => void;
+  onRespond: ({ matchId, status }: { matchId: number; status: 'accepted' | 'rejected' }) => void;
 }
 
 export function MatchRequests({ requests, isResponding, onRespond }: MatchRequestsProps) {
   const [processedRequests, setProcessedRequests] = useState<Record<number, boolean>>({});
+  const [processingId, setProcessingId] = useState<number | null>(null);
 
   const handleResponse = async (matchId: number, status: 'accepted' | 'rejected') => {
-    if (processedRequests[matchId]) {
-      return; // Prevent duplicate responses
+    if (processedRequests[matchId] || processingId !== null) {
+      return; // Prevent duplicate responses or concurrent processing
     }
 
     try {
+      setProcessingId(matchId);
       setProcessedRequests(prev => ({ ...prev, [matchId]: true }));
-      await onRespond(matchId, status);
+      
+      await onRespond({ matchId, status });
 
+      // Keep the processed state
+      setProcessedRequests(prev => ({ ...prev, [matchId]: true }));
+      
       toast({
         title: status === 'accepted' ? 'Match Accepted!' : 'Request Declined',
         description: status === 'accepted' 
           ? 'You can now start chatting with your new match!' 
           : 'The match request has been declined.',
-        variant: status === 'accepted' ? 'default' : 'secondary'
+        variant: status === 'accepted' ? 'default' : 'destructive'
       });
     } catch (error) {
       console.error('Failed to respond to match request:', error);
+      // Reset the processed state only on error
       setProcessedRequests(prev => ({ ...prev, [matchId]: false }));
+
+      // Show more specific error messages
+      let errorMessage = 'An unexpected error occurred';
+      if (error instanceof Error) {
+        if (error.message.includes('Session expired')) {
+          errorMessage = 'Your session has expired. Please log in again.';
+        } else if (error.message.includes('no longer available')) {
+          errorMessage = 'This match request is no longer available.';
+        } else {
+          errorMessage = error.message;
+        }
+      }
 
       toast({
         title: 'Failed to Process Request',
-        description: error instanceof Error ? error.message : 'An unexpected error occurred',
+        description: errorMessage,
         variant: 'destructive'
       });
+    } finally {
+      setProcessingId(null);
     }
   };
 
@@ -71,59 +92,64 @@ export function MatchRequests({ requests, isResponding, onRespond }: MatchReques
 
   return (
     <div className="space-y-4">
-      {requests.map((request) => (
-        <Card key={request.id} className="p-4">
-          <div className="flex items-start gap-4">
-            <Avatar>
-              <AvatarImage
-                src={request.requester?.avatar}
-                alt={request.requester?.name || 'User avatar'}
-              />
-              <AvatarFallback>
-                <User className="h-6 w-6" />
-              </AvatarFallback>
-            </Avatar>
-            <div className="flex-1">
-              <div className="flex justify-between items-start">
-                <div>
-                  <h4 className="font-semibold">{request.requester?.name}</h4>
-                  <p className="text-sm text-muted-foreground">
-                    @{request.requester?.username}
-                  </p>
-                </div>
-                <div className="text-sm text-muted-foreground">
-                  {formatDistanceToNow(new Date(request.createdAt), { addSuffix: true })}
-                </div>
-              </div>
+      {requests.map((request) => {
+        const isProcessing = processingId === request.id;
+        const isDisabled = isResponding || processedRequests[request.id] || processingId !== null;
 
-              <div className="mt-4 flex gap-2">
-                <Button
-                  variant="default"
-                  disabled={isResponding || processedRequests[request.id]}
-                  onClick={() => handleResponse(request.id, 'accepted')}
-                  className="relative"
-                >
-                  {(isResponding || processedRequests[request.id]) && (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  )}
-                  Accept
-                </Button>
-                <Button
-                  variant="outline"
-                  disabled={isResponding || processedRequests[request.id]}
-                  onClick={() => handleResponse(request.id, 'rejected')}
-                  className="relative"
-                >
-                  {(isResponding || processedRequests[request.id]) && (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  )}
-                  Decline
-                </Button>
+        return (
+          <Card key={request.id} className="p-4">
+            <div className="flex items-start gap-4">
+              <Avatar>
+                <AvatarImage
+                  src={request.avatar}
+                  alt={request.name || 'User avatar'}
+                />
+                <AvatarFallback>
+                  <User className="h-6 w-6" />
+                </AvatarFallback>
+              </Avatar>
+              <div className="flex-1">
+                <div className="flex justify-between items-start">
+                  <div>
+                    <h4 className="font-semibold">{request.name}</h4>
+                    <p className="text-sm text-muted-foreground">
+                      @{request.username}
+                    </p>
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    {formatDistanceToNow(new Date(request.createdAt), { addSuffix: true })}
+                  </div>
+                </div>
+
+                <div className="mt-4 flex gap-2">
+                  <Button
+                    variant="default"
+                    disabled={isDisabled}
+                    onClick={() => handleResponse(request.id, 'accepted')}
+                    className="relative"
+                  >
+                    {isProcessing && (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    )}
+                    Accept
+                  </Button>
+                  <Button
+                    variant="outline"
+                    disabled={isDisabled}
+                    onClick={() => handleResponse(request.id, 'rejected')}
+                    className="relative"
+                  >
+                    {isProcessing && (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    )}
+                    Decline
+                  </Button>
+                </div>
               </div>
             </div>
-          </div>
-        </Card>
-      ))}
+          </Card>
+        );
+      })}
     </div>
   );
 }

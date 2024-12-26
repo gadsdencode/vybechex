@@ -1,14 +1,20 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card } from "@/components/ui/card";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Send, AlertCircle, Loader2 } from "lucide-react";
+import { Send, AlertCircle, Loader2, Moon, Sun } from 'lucide-react';
 import { formatDistanceToNow } from "date-fns";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { useUser } from "@/hooks/use-user";
+import { motion, AnimatePresence } from "framer-motion";
+import { useTheme } from "next-themes";
+import { MessageBubble } from "./MessageBubble";
+import { ConnectionStatus } from "./ConnectionStatus";
+import { TypingIndicator } from "./TypingIndicator";
+import styles from "./ChatWindow.module.css";
 
 interface Message {
   id: number;
@@ -27,6 +33,8 @@ interface ChatWindowProps {
 }
 
 export function ChatWindow({ matchId }: ChatWindowProps) {
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [isTyping, setIsTyping] = useState(false);
   const [message, setMessage] = useState("");
   const [socket, setSocket] = useState<WebSocket | null>(null);
   const [isConnecting, setIsConnecting] = useState(true);
@@ -39,6 +47,10 @@ export function ChatWindow({ matchId }: ChatWindowProps) {
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
   const { user } = useUser();
   const sessionIdRef = useRef<string>(crypto.randomUUID());
+
+  const toggleTheme = () => {
+    setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
+  };
 
   // Fetch existing messages
   const { data: messages = [], isLoading: isLoadingMessages } = useQuery<Message[]>({
@@ -177,73 +189,71 @@ export function ChatWindow({ matchId }: ChatWindowProps) {
   }
 
   return (
-    <Card className="flex flex-col h-[600px]">
-      {(isConnecting || isLoadingMessages) && (
-        <div className="absolute inset-0 bg-background/80 backdrop-blur-sm flex items-center justify-center z-50">
-          <div className="flex flex-col items-center gap-2">
-            <Loader2 className="h-8 w-8 animate-spin text-primary" />
-            <p className="text-sm text-muted-foreground">
+    <Card className={`${styles.chatWindow} ${styles[theme]}`}>
+      <div className={styles.header}>
+        <h2 className={styles.title}>Chat</h2>
+        <ConnectionStatus isConnected={!isConnecting && !connectionError} />
+        <Button onClick={toggleTheme} variant="ghost" size="icon" className={styles.themeToggle}>
+          {theme === 'light' ? <Moon className="h-4 w-4" /> : <Sun className="h-4 w-4" />}
+        </Button>
+      </div>
+
+      <AnimatePresence>
+        {(isConnecting || isLoadingMessages) && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className={styles.loadingOverlay}
+          >
+            <Loader2 className={styles.loadingSpinner} />
+            <p className={styles.loadingText}>
               {isConnecting ? "Connecting to chat..." : "Loading messages..."}
             </p>
-          </div>
-        </div>
-      )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-      <ScrollArea ref={scrollRef} className="flex-1 p-4">
-        <div className="space-y-4">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${
-                msg.sender.id === user.id ? "justify-end" : "justify-start"
-              }`}
-            >
-              <div
-                className={`max-w-[80%] rounded-lg p-3 ${
-                  msg.sender.id === user.id
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted"
-                }`}
-              >
-                <div className="flex items-center gap-2 mb-1">
-                  <span className="text-sm font-medium">
-                    {msg.sender.name || msg.sender.username}
-                  </span>
-                  <span className="text-xs opacity-70">
-                    {formatDistanceToNow(new Date(msg.createdAt), { addSuffix: true })}
-                  </span>
-                </div>
-                <p className="text-sm whitespace-pre-wrap break-words">
-                  {msg.content}
-                </p>
-              </div>
-            </div>
+      <ScrollArea className={styles.messageArea}>
+        <motion.div layout className={styles.messageList}>
+          {messages.map((msg, index) => (
+            <MessageBubble 
+              key={msg.id} 
+              message={msg} 
+              currentUserId={user?.id}
+              isLastMessage={index === messages.length - 1}
+            />
           ))}
-        </div>
+        </motion.div>
+        {isTyping && <TypingIndicator />}
       </ScrollArea>
 
-      <div className="p-4 border-t">
-        <div className="flex gap-2">
-          <Input
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            placeholder="Type your message..."
-            disabled={!socket || socket.readyState !== WebSocket.OPEN}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" && !e.shiftKey) {
-                e.preventDefault();
-                handleSendMessage();
-              }
-            }}
-          />
-          <Button 
-            onClick={handleSendMessage} 
-            size="icon"
-            disabled={!socket || socket.readyState !== WebSocket.OPEN}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
-        </div>
+      <div className={styles.inputArea}>
+        <Input
+          value={message}
+          onChange={(e) => {
+            setMessage(e.target.value);
+            // Simulate typing indicator
+            setIsTyping(true);
+            setTimeout(() => setIsTyping(false), 1000);
+          }}
+          placeholder="Type your message..."
+          disabled={!socket || socket.readyState !== WebSocket.OPEN}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+              e.preventDefault();
+              handleSendMessage();
+            }
+          }}
+          className={styles.messageInput}
+        />
+        <Button 
+          onClick={handleSendMessage} 
+          disabled={!socket || socket.readyState !== WebSocket.OPEN}
+          className={styles.sendButton}
+        >
+          <Send className="h-4 w-4" />
+        </Button>
       </div>
     </Card>
   );
