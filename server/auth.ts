@@ -107,7 +107,11 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
             eq(matches.userId1, user.id),
             eq(matches.userId2, user.id)
           ),
-          eq(matches.status, 'accepted')
+          or(
+            eq(matches.status, 'accepted'),
+            eq(matches.status, 'requested'),
+            eq(matches.status, 'pending')
+          )
         )
       )
       .limit(1);
@@ -115,9 +119,21 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
     if (!match) {
       return res.status(404).json({ 
         success: false, 
-        message: "Match not found or access denied",
+        message: "Match not found or invalid status",
         timestamp: new Date().toISOString()
       });
+    }
+
+    // Check if the match is in a valid state for the requested operation
+    if (req.path.includes('/messages')) {
+      // For message-related endpoints, only allow if match is accepted
+      if (match.status !== 'accepted') {
+        return res.status(403).json({
+          success: false,
+          message: "Match must be accepted to access messages",
+          timestamp: new Date().toISOString()
+        });
+      }
     }
 
     // Store match data in request for route handlers
@@ -162,18 +178,18 @@ export async function setupAuth(app: Express) {
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: false,
+    resave: true, // Changed to true to ensure session is saved
     saveUninitialized: false,
-    rolling: true, // Reset expiration on each request
+    rolling: true,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
-      secure: false, // Will be set to true in production
+      maxAge: 24 * 60 * 60 * 1000,
+      secure: false,
       sameSite: "lax",
       httpOnly: true,
       path: '/'
     },
     store: sessionStore,
-    name: 'sid', // Custom session ID name
+    name: 'sid',
   };
 
   if (app.get("env") === "production") {
@@ -190,6 +206,30 @@ export async function setupAuth(app: Express) {
   // Cleanup handler for graceful shutdown
   process.on('SIGTERM', () => {
     sessionStore.stopInterval();
+  });
+
+  // Serialize the entire user object
+  passport.serializeUser((user: Express.User, done) => {
+    done(null, user.id);
+  });
+
+  // Deserialize with full user data
+  passport.deserializeUser(async (id: number, done) => {
+    try {
+      const [user] = await db
+        .select()
+        .from(users)
+        .where(eq(users.id, id))
+        .limit(1);
+      
+      if (!user) {
+        return done(null, false);
+      }
+      
+      done(null, user);
+    } catch (error) {
+      done(error, false);
+    }
   });
 
   passport.use(
@@ -215,29 +255,6 @@ export async function setupAuth(app: Express) {
       }
     })
   );
-
-  passport.serializeUser((user: Express.User, done) => {
-    done(null, user.id);
-  });
-
-  passport.deserializeUser(async (id: number, done) => {
-    try {
-      const [user] = await db
-        .select()
-        .from(users)
-        .where(eq(users.id, id))
-        .limit(1);
-
-      if (!user) {
-        return done(null, false);
-      }
-
-      return done(null, user);
-    } catch (err) {
-      console.error('Session deserialize error:', err);
-      return done(err);
-    }
-  });
 
   app.post("/api/register", async (req, res, next) => {
     try {
@@ -355,12 +372,34 @@ export async function setupAuth(app: Express) {
     });
   });
 
-  app.get("/api/user", (req, res) => {
-    if (req.isAuthenticated()) {
-      return res.json({
-        success: true,
-        user: req.user
-      });
+  app.get("/api/user", async (req, res) => {
+    if (req.isAuthenticated() && req.user?.id) {
+      try {
+        // Fetch fresh user data from the database
+        const [userData] = await db
+          .select()
+          .from(users)
+          .where(eq(users.id, req.user.id))
+          .limit(1);
+
+        if (!userData) {
+          return res.status(401).json({
+            success: false,
+            message: "User not found"
+          });
+        }
+
+        return res.json({
+          success: true,
+          user: userData
+        });
+      } catch (error) {
+        console.error("Error fetching user data:", error);
+        return res.status(500).json({
+          success: false,
+          message: "Failed to fetch user data"
+        });
+      }
     }
 
     res.status(401).json({

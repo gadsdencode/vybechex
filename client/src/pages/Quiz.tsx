@@ -129,10 +129,10 @@ const questions = [
   }
 ];
 
-
 export default function Quiz() {
   const [currentQuestion, setCurrentQuestion] = useState(0);
   const [answers, setAnswers] = useState<Record<string, number>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -142,7 +142,6 @@ export default function Quiz() {
     if (!question) return;
 
     // Calculate trait score based on answer index (0-3)
-    // This creates a personality profile where each trait is scored 0-1
     const traitScore = (3 - answerIndex) / 3; // Normalize to 0-1 range
     const newAnswers = {
       ...answers,
@@ -154,25 +153,81 @@ export default function Quiz() {
       setCurrentQuestion(curr => curr + 1);
     } else {
       try {
+        setIsSubmitting(true);
+
+        // First verify that we're still authenticated
+        const userResponse = await fetch("/api/user", {
+          credentials: "include",
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+        
+        if (userResponse.status === 401) {
+          toast({
+            title: "Session Expired",
+            description: "Please log in again to continue.",
+            variant: "destructive"
+          });
+          navigate("/login");
+          return;
+        }
+
+        // Submit quiz
         const res = await fetch("/api/quiz", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { 
+            "Content-Type": "application/json",
+            'Accept': 'application/json'
+          },
           body: JSON.stringify({ traits: newAnswers }),
           credentials: "include",
         });
 
         if (!res.ok) {
-          const error = await res.text();
-          throw new Error(error);
+          const errorData = await res.json().catch(() => ({ message: "Failed to submit quiz" }));
+          throw new Error(errorData.message || "Failed to submit quiz");
         }
-        
-        // Force refresh user data to update quiz completion status
-        await queryClient.invalidateQueries({ queryKey: ["/api/user"] });
-        
+
+        // Wait for the response data
+        const responseData = await res.json();
+        console.log("Quiz submission response:", responseData);
+
+        // Force immediate refetch of user data
+        await queryClient.refetchQueries({ 
+          queryKey: ['/api/user'],
+          type: 'active',
+          exact: true
+        });
+
+        // Verify that the quiz completion was registered
+        const updatedUserResponse = await fetch("/api/user", {
+          credentials: "include",
+          headers: {
+            'Accept': 'application/json',
+            'Cache-Control': 'no-cache'
+          }
+        });
+
+        if (!updatedUserResponse.ok) {
+          throw new Error("Failed to verify quiz completion");
+        }
+
+        const updatedUserData = await updatedUserResponse.json();
+        console.log("Updated user data after quiz:", updatedUserData);
+
+        if (!updatedUserData?.user?.quizCompleted) {
+          throw new Error("Quiz completion was not registered properly");
+        }
+
         toast({
           title: "Quiz completed!",
           description: "Great! Now let's find you some compatible friends!",
         });
+
+        // Invalidate matches query after confirming quiz completion
+        await queryClient.invalidateQueries({ queryKey: ['matches'] });
 
         navigate("/matches");
       } catch (error: any) {
@@ -182,6 +237,8 @@ export default function Quiz() {
           description: error.message || "Failed to submit quiz. Please try again.",
           variant: "destructive",
         });
+      } finally {
+        setIsSubmitting(false);
       }
     }
   };
@@ -211,6 +268,7 @@ export default function Quiz() {
               variant="outline"
               className="justify-start h-auto py-4 px-6 text-left"
               onClick={() => handleAnswer(question.id, index)}
+              disabled={isSubmitting}
             >
               {option}
             </Button>

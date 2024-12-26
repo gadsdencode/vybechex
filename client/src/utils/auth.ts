@@ -8,6 +8,7 @@ interface UserData {
   name: string | null;
   avatar?: string;
   isGroupCreator: boolean;
+  quizCompleted: boolean;
 }
 
 // Get the user ID from localStorage
@@ -33,8 +34,12 @@ export function getUserData(): UserData | null {
 }
 
 // Set the user ID
-export function setUserId(id: number): void {
+export function setUserId(id: number | undefined | null): void {
   try {
+    if (id === undefined || id === null) {
+      localStorage.removeItem(USER_ID_KEY);
+      return;
+    }
     localStorage.setItem(USER_ID_KEY, id.toString());
   } catch (error) {
     console.error('Error setting user ID:', error);
@@ -42,9 +47,23 @@ export function setUserId(id: number): void {
 }
 
 // Set the full user data
-export function setUserData(data: UserData): void {
+export function setUserData(data: Partial<UserData> | null): void {
   try {
-    localStorage.setItem(USER_DATA_KEY, JSON.stringify(data));
+    if (!data) {
+      localStorage.removeItem(USER_DATA_KEY);
+      return;
+    }
+    const currentData = getUserData();
+    const newData = {
+      ...currentData,
+      ...data,
+      id: data.id || currentData?.id,
+      username: data.username || currentData?.username,
+      name: data.name || currentData?.name || data.username,
+      isGroupCreator: data.isGroupCreator ?? currentData?.isGroupCreator ?? false,
+      quizCompleted: data.quizCompleted ?? currentData?.quizCompleted ?? false
+    };
+    localStorage.setItem(USER_DATA_KEY, JSON.stringify(newData));
   } catch (error) {
     console.error('Error setting user data:', error);
   }

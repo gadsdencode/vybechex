@@ -59,7 +59,7 @@ export default function CreateMatchPage() {
         throw err;
       }
     },
-    enabled: !!matchId,
+    enabled: !!matchId, // Only run query if matchId exists
     retry: false,
     staleTime: 30000,
     refetchOnWindowFocus: false
@@ -73,7 +73,8 @@ export default function CreateMatchPage() {
     });
   }
 
-  if (!matchId || isLoading) {
+  // Only show loading spinner if we're checking an existing match
+  if (matchId && isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
         <Loader2 className="h-8 w-8 animate-spin text-primary" />

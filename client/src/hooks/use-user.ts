@@ -80,7 +80,7 @@ export function useUser() {
 
         if (response.status === 401) {
           console.log("User not authenticated");
-          clearAuthData();
+          // Don't clear auth data here, just return null
           return null;
         }
 
@@ -93,30 +93,37 @@ export function useUser() {
         const userData = await response.json();
         console.log("User data fetched:", userData);
 
-        if (userData) {
-          setUserId(userData.id);
+        if (userData?.user) {
+          const user = userData.user;
+          setUserId(user.id);
           setUserData({
-            id: userData.id,
-            username: userData.username,
-            name: userData.name || userData.username,
-            avatar: userData.avatar || "/default-avatar.png",
-            isGroupCreator: userData.isGroupCreator || false
+            id: user.id,
+            username: user.username,
+            name: user.name || user.username,
+            avatar: user.avatar || "/default-avatar.png",
+            isGroupCreator: user.isGroupCreator || false,
+            quizCompleted: user.quizCompleted || false
           });
-          return userData;
+          return user;
         }
 
-        clearAuthData();
         return null;
       } catch (error) {
         console.error("Error in user fetch:", error);
-        clearAuthData();
+        // Don't clear auth data on network errors
         return null;
       }
     },
     staleTime: 1000 * 60,
     gcTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
-    retry: false,
+    retry: (failureCount, error) => {
+      // Retry up to 3 times, but not for 401 errors
+      if (error instanceof Error && error.message.includes('401')) {
+        return false;
+      }
+      return failureCount < 3;
+    },
   });
 
   const loginMutation = useMutation({
