@@ -3,7 +3,7 @@ import type { Request, Response, NextFunction } from 'express';
 
 export function setupCopilotKitEndpoint() {
 	const serviceAdapter = new OpenAIAdapter({
-		openAiApiKey: process.env.OPENAI_API_KEY,
+		apiKey: process.env.OPENAI_API_KEY,
 		model: 'gpt-4'
 	});
 	
