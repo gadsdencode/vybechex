@@ -2,12 +2,15 @@ import express, { type Request, Response, NextFunction } from "express";
 import { registerRoutes } from "./routes";
 import { setupVite, serveStatic, log } from "./vite";
 import { setupAuth } from "./auth";
+import { setupCopilotKitEndpoint } from "./copilotkit";
 
 const app = express();
 
 // Basic middleware setup - before auth to ensure body parsing is available
 app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
+
+app.use("/copilotkit", setupCopilotKitEndpoint());
 
 // Request logging middleware
 app.use((req, res, next) => {

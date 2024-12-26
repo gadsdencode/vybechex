@@ -13,6 +13,11 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.33.1",
+    "@copilotkit/react-core": "^1.4.7",
+    "@copilotkit/react-textarea": "^1.4.7",
+    "@copilotkit/react-ui": "^1.4.7",
+    "@copilotkit/runtime": "^1.4.7",
+    "@copilotkit/shared": "^1.4.7",
     "@hookform/resolvers": "^3.9.1",
     "@jridgewell/trace-mapping": "^0.3.25",
     "@neondatabase/serverless": "^0.10.4",
