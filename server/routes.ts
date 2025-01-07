@@ -1544,7 +1544,7 @@ export function registerRoutes(app: Express): Server {
   app.use(errorHandler);
 
   // Add storage route handler
-  app.get('/api/storage/:filename', async (req, res) => {
+  app.get('/api/avatars/:filename(*)', async (req, res) => {
     try {
       const fileName = req.params.filename;
       
@@ -1556,20 +1556,14 @@ export function registerRoutes(app: Express): Server {
           message: 'Invalid filename'
         });
       }
-      
-      // Clean and validate the file path
-      const cleanFileName = decodeURIComponent(fileName).split('/').pop();
-      if (!cleanFileName) {
-        throw new Error('Invalid filename');
-      }
 
       // Handle the case where the full replit-objstore URL is passed
-      if (cleanFileName.includes('replit-objstore')) {
-        return res.redirect(cleanFileName);
+      if (fileName.includes('replit-objstore')) {
+        return res.redirect(fileName);
       }
 
-      // Remove any leading slashes and use raw filename
-      const filePath = fileName.replace(/^\/+/, '');
+      // Ensure the avatars/ prefix is present
+      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${fileName}`;
       
       console.log('Attempting to serve file:', filePath);
       
@@ -1603,13 +1597,11 @@ export function registerRoutes(app: Express): Server {
         console.error('Error serving file from storage:', filePath, error);
         
         // Always try to serve default avatar as fallback for avatar requests
-        if (filePath.includes('avatar')) {
-          const defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
-          if (require('fs').existsSync(defaultAvatarPath)) {
-            res.setHeader('Content-Type', 'image/jpeg');
-            res.setHeader('Cache-Control', 'public, max-age=31536000');
-            return res.sendFile(defaultAvatarPath);
-          }
+        const defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
+        if (require('fs').existsSync(defaultAvatarPath)) {
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=31536000');
+          return res.sendFile(defaultAvatarPath);
         }
         
         res.status(404).json({

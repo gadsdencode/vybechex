@@ -27,13 +27,19 @@ const getAvatarUrl = (avatarPath: string): string => {
     return DEFAULT_AVATAR;
   }
 
-  // Handle full URLs from object storage
+  // Handle full URLs (including replit-objstore URLs)
   if (avatarPath.startsWith('http')) {
     return avatarPath;
   }
 
-  // Use the avatarPath directly since it already includes the avatars/ prefix
-  return `/api/storage${avatarPath.startsWith('/') ? avatarPath : `/${avatarPath}`}`;
+  // Handle relative API paths
+  if (avatarPath.startsWith('/api/')) {
+    return avatarPath;
+  }
+
+  // Ensure avatars/ prefix is present
+  const path = avatarPath.startsWith('avatars/') ? avatarPath : `avatars/${avatarPath}`;
+  return `/api/avatars/${path}`;
 };
 
 export default function ProfilePage() {

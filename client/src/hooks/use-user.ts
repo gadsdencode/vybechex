@@ -99,8 +99,8 @@ export function useUser() {
             id: user.id,
             username: user.username,
             name: user.name || user.username,
-            // Add fallback for avatar URL
-            avatar: user.avatar ? `/api/storage/${user.avatar}` : '/default-avatar.png',
+            // Handle avatar URL properly
+            avatar: user.avatar ? (user.avatar.startsWith('http') ? user.avatar : `/api/avatars/${user.avatar}`) : '/default-avatar.png',
             isGroupCreator: user.isGroupCreator || false,
             quizCompleted: user.quizCompleted || false
           });
