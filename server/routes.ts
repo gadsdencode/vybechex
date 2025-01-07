@@ -1557,26 +1557,28 @@ export function registerRoutes(app: Express): Server {
   // Register error handler
   app.use(errorHandler);
 
+  // Add storage route handler
+  app.get('/api/storage/:filename', async (req, res) => {
+    try {
+      const fileName = req.params.filename;
+      const fileData = await storage.download(`avatars/${fileName}`);
+      
+      if (!fileData) {
+        return res.status(404).sendFile(path.join(__dirname, '../client/public/default-avatar.png'));
+      }
+
+      const contentType = fileName.endsWith('.jpeg') || fileName.endsWith('.jpg') 
+        ? 'image/jpeg' 
+        : 'image/png';
+      
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=31536000');
+      res.send(fileData);
+    } catch (error) {
+      console.error('Error serving avatar:', error);
+      res.status(404).sendFile(path.join(__dirname, '../client/public/default-avatar.png'));
+    }
+  });
+
   return httpServer;
 }
-app.get('/api/storage/:filename', async (req, res) => {
-  try {
-    const fileName = req.params.filename;
-    const fileData = await storage.download(`avatars/${fileName}`);
-    
-    if (!fileData) {
-      return res.status(404).sendFile(path.join(__dirname, '../client/public/default-avatar.png'));
-    }
-
-    const contentType = fileName.endsWith('.jpeg') || fileName.endsWith('.jpg') 
-      ? 'image/jpeg' 
-      : 'image/png';
-    
-    res.setHeader('Content-Type', contentType);
-    res.setHeader('Cache-Control', 'public, max-age=31536000');
-    res.send(fileData);
-  } catch (error) {
-    console.error('Error serving avatar:', error);
-    res.status(404).sendFile(path.join(__dirname, '../client/public/default-avatar.png'));
-  }
-});
