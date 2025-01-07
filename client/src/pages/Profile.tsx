@@ -37,7 +37,7 @@ const getAvatarUrl = (avatarPath: string): string => {
   // Handle relative paths
   const cleanPath = avatarPath.replace(/^\/?(api\/storage\/)?/, '');
   if (!cleanPath.startsWith('avatars/')) {
-    return `/api/storage/${cleanPath}`;
+    return `/api/storage/avatars/${cleanPath}`;
   }
   return `/api/storage/${cleanPath}`;
 };
