@@ -1568,9 +1568,8 @@ export function registerRoutes(app: Express): Server {
         return res.redirect(cleanFileName);
       }
 
-      // Handle path with or without leading slash consistently
-      const normalizedPath = fileName.startsWith('/') ? fileName.slice(1) : fileName;
-      const filePath = normalizedPath;
+      // Remove any leading slashes and use raw filename
+      const filePath = fileName.replace(/^\/+/, '');
       
       console.log('Attempting to serve file:', filePath);
       
