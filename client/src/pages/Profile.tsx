@@ -158,20 +158,12 @@ export default function ProfilePage() {
                           const target = e.target as HTMLImageElement;
                           target.onerror = null; // Prevent infinite loop
                           console.error('Failed to load avatar:', target.src);
-                          target.style.display = 'none';
-                          // Show fallback icon
-                          const fallback = target.parentElement?.querySelector('.fallback');
-                          if (fallback) {
-                            fallback.classList.remove('hidden');
-                          }
+                          target.src = '/default-avatar.png'; // Set default avatar
                         }}
                       />
                     ) : (
                       <User className="h-10 w-10 text-muted-foreground" />
                     )}
-                    <div className="fallback hidden">
-                      <User className="h-10 w-10 text-muted-foreground" />
-                    </div>
                   </div>
                   <label 
                     htmlFor="avatar-upload" 
@@ -229,20 +221,12 @@ export default function ProfilePage() {
                           const target = e.target as HTMLImageElement;
                           target.onerror = null; // Prevent infinite loop
                           console.error('Failed to load avatar:', target.src);
-                          target.style.display = 'none';
-                          // Show fallback icon
-                          const fallback = target.parentElement?.querySelector('.fallback');
-                          if (fallback) {
-                            fallback.classList.remove('hidden');
-                          }
+                          target.src = '/default-avatar.png'; // Set default avatar
                         }}
                       />
                     ) : (
                       <User className="h-10 w-10 text-muted-foreground" />
                     )}
-                    <div className="fallback hidden">
-                      <User className="h-10 w-10 text-muted-foreground" />
-                    </div>
                   </div>
                   <label 
                     htmlFor="avatar-upload-edit" 
@@ -314,16 +298,16 @@ export default function ProfilePage() {
                     )}
                   />
 
-                <Button variant="default" type="submit" disabled={updateProfile.isPending}>
-                  {updateProfile.isPending ? (
-                    <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Syncing profile...
-                    </>
-                  ) : (
-                    "Update Profile"
-                  )}
-                </Button>
+                  <Button variant="default" type="submit" disabled={updateProfile.isPending}>
+                    {updateProfile.isPending ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Syncing profile...
+                      </>
+                    ) : (
+                      "Update Profile"
+                    )}
+                  </Button>
                 </form>
               </Form>
             </CardContent>
