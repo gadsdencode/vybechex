@@ -1568,8 +1568,9 @@ export function registerRoutes(app: Express): Server {
         return res.redirect(cleanFileName);
       }
 
-      // Always use avatars directory and ensure no path traversal
-      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${cleanFileName}`;
+      // Normalize path by removing leading slash and ensuring avatars directory
+      const normalizedPath = fileName.replace(/^\/+/, '');
+      const filePath = normalizedPath.startsWith('avatars/') ? normalizedPath : `avatars/${cleanFileName}`;
       
       console.log('Attempting to serve file:', filePath);
       
