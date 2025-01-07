@@ -1582,7 +1582,8 @@ export function registerRoutes(app: Express): Server {
       if (!cleanFileName) {
         throw new Error('Invalid filename');
       }
-      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${cleanFileName}`;
+      // Always use avatars directory and ensure no path traversal
+      const filePath = `avatars/${cleanFileName.replace(/^.*[\\\/]/, '')}`;
       
       console.log('Attempting to serve file:', filePath);
       

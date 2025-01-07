@@ -27,19 +27,15 @@ const getAvatarUrl = (avatarPath: string): string => {
     return DEFAULT_AVATAR;
   }
 
-  // If it's a full URL, extract just the filename
-  if (avatarPath.includes('replit-objstore')) {
-    const segments = avatarPath.split('/');
-    const filename = segments[segments.length - 1];
-    return `/api/storage/avatars/${filename}`;
+  // Extract filename for any type of URL
+  const filename = avatarPath.split('/').pop();
+  
+  if (!filename) {
+    return DEFAULT_AVATAR;
   }
 
-  // Handle relative paths
-  const cleanPath = avatarPath.replace(/^\/?(api\/storage\/)?/, '');
-  if (!cleanPath.startsWith('avatars/')) {
-    return `/api/storage/avatars/${cleanPath}`;
-  }
-  return `/api/storage/${cleanPath}`;
+  // Always use the local API endpoint
+  return `/api/storage/avatars/${filename}`;
 };
 
 export default function ProfilePage() {
