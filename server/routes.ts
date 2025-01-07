@@ -1577,8 +1577,12 @@ export function registerRoutes(app: Express): Server {
         });
       }
       
-      // Ensure the file path is properly constructed
-      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${fileName}`;
+      // Clean and validate the file path
+      const cleanFileName = decodeURIComponent(fileName).split('/').pop();
+      if (!cleanFileName) {
+        throw new Error('Invalid filename');
+      }
+      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${cleanFileName}`;
       
       console.log('Attempting to serve file:', filePath);
       
