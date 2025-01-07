@@ -185,12 +185,14 @@ export async function setupAuth(app: Express) {
 
   const MemoryStore = createMemoryStore(session);
   const sessionStore = new MemoryStore({
-    checkPeriod: 86400000, // prune expired entries every 24h
-    stale: false, // Delete expired sessions immediately
-    ttl: 24 * 60 * 60 * 1000, // 24 hours
+    checkPeriod: 24 * 60 * 60 * 1000, // Check once per day
+    stale: true, // Keep stale sessions
+    ttl: 7 * 24 * 60 * 60 * 1000, // 7 days
     dispose: (key: string, sess: session.SessionData) => {
-      // Cleanup any resources when session expires
-      console.log(`Session ${key} expired`);
+      // Only log in development
+      if (process.env.NODE_ENV === 'development') {
+        console.debug(`Session ${key} expired`);
+      }
     }
   });
 
