@@ -27,18 +27,13 @@ const getAvatarUrl = (avatarPath: string): string => {
     return DEFAULT_AVATAR;
   }
 
-  // If it's a relative path (just filename or avatars/filename), prefix with /api/storage
-  if (!avatarPath.startsWith('http')) {
-    return `/api/storage/${avatarPath.startsWith('avatars/') ? avatarPath : `avatars/${avatarPath}`}`;
+  // Handle full URLs from object storage
+  if (avatarPath.startsWith('http')) {
+    return avatarPath;
   }
 
-  // For any full URLs (legacy data), extract the filename and use our API
-  const filename = avatarPath.split('/').pop();
-  if (!filename) {
-    return DEFAULT_AVATAR;
-  }
-
-  return `/api/storage/avatars/${filename}`;
+  // Otherwise use our API storage endpoint
+  return `/api/storage/${avatarPath}`;
 };
 
 export default function ProfilePage() {
