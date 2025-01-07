@@ -1334,11 +1334,8 @@ export function registerRoutes(app: Express): Server {
       const avatarUrl = `https://replit-objstore-42ba1808-b6bc-4955-a490-87bc85fa3955.replit.dev/${fileName}`;
 
       try {
-        // Verify the URL is accessible directly
-        const urlCheck = await fetch(avatarUrl, { method: 'HEAD' });
-        
         // Verify the URL is accessible
-        const urlCheck = await fetch(fullUrl, { method: 'HEAD' });
+        const urlCheck = await fetch(avatarUrl, { method: 'HEAD' });
         if (!urlCheck.ok) {
           throw new Error('Generated avatar URL is not accessible');
         }
