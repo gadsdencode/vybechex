@@ -12,12 +12,17 @@ export function ProfileProgress() {
     return (
       <div className="flex items-center justify-center h-32">
         <Loader2 className="h-8 w-8 animate-spin" />
+        <p className="text-sm text-white ml-2 border border-white rounded-md p-2 bg-muted">Loading achievements...</p>
       </div>
     );
   }
 
   if (!progress) {
-    return null;
+    return (
+      <div className="flex items-center justify-center h-32">
+        <p className="text-sm text-white ml-2 border border-white rounded-md p-2 bg-muted">No achievements yet, complete your profile to start earning them!</p>
+      </div>
+    );
   }
 
   const nextLevelXp = progress.level * 1000; // Simple XP calculation

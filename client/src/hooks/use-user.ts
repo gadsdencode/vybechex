@@ -100,7 +100,7 @@ export function useUser() {
             id: user.id,
             username: user.username,
             name: user.name || user.username,
-            avatar: user.avatar || "/default-avatar.png",
+            avatar: user.avatar,
             isGroupCreator: user.isGroupCreator || false,
             quizCompleted: user.quizCompleted || false
           });
@@ -140,7 +140,7 @@ export function useUser() {
             id: user.id,
             username: user.username,
             name: user.name || user.username,
-            avatar: user.avatar || "/default-avatar.png",
+            avatar: user.avatar,
             isGroupCreator: user.isGroupCreator || false
           });
 
