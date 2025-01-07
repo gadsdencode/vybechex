@@ -1329,23 +1329,8 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Get the public URL for Replit Object Storage using the current domain
-      // Store the direct Replit Object Storage URL
-      const avatarUrl = `https://replit-objstore-42ba1808-b6bc-4955-a490-87bc85fa3955.replit.dev/${fileName}`;
-
-      try {
-        // Verify the URL is accessible
-        const urlCheck = await fetch(avatarUrl, { method: 'HEAD' });
-        if (!urlCheck.ok) {
-          throw new Error('Generated avatar URL is not accessible');
-        }
-      } catch (error) {
-        console.error('Error verifying avatar URL:', error);
-        return res.status(500).json({
-          success: false,
-          message: 'Failed to verify image URL accessibility'
-        });
-      }
+      // Store just the filename in the database
+      const avatarUrl = fileName;  // Just store avatars/userid-uuid.ext
 
       // Update user's avatar in database
       const [updatedUser] = await db
@@ -1577,8 +1562,14 @@ export function registerRoutes(app: Express): Server {
       if (!cleanFileName) {
         throw new Error('Invalid filename');
       }
+
+      // Handle the case where the full replit-objstore URL is passed
+      if (cleanFileName.includes('replit-objstore')) {
+        return res.redirect(cleanFileName);
+      }
+
       // Always use avatars directory and ensure no path traversal
-      const filePath = `avatars/${cleanFileName.replace(/^.*[\\\/]/, '')}`;
+      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${cleanFileName}`;
       
       console.log('Attempting to serve file:', filePath);
       

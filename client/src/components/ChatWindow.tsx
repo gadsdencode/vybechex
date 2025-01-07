@@ -220,7 +220,7 @@ export function ChatWindow({ matchId }: ChatWindowProps) {
             <MessageBubble 
               key={msg.id} 
               message={msg} 
-              currentUserId={user?.id}
+              currentUserId={user.id}
               isLastMessage={index === messages.length - 1}
             />
           ))}
