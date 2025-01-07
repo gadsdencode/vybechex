@@ -27,13 +27,11 @@ const getAvatarUrl = (avatarPath: string): string => {
     return DEFAULT_AVATAR;
   }
   
-  // If it's already a full URL, return as is
-  if (avatarPath.startsWith('http')) {
-    return avatarPath;
-  }
+  // Remove any leading slashes and 'avatars/' prefix if present
+  const cleanPath = avatarPath.replace(/^\/?(avatars\/)?/, '');
   
   // Return the path through our API storage endpoint
-  return `/api/storage/${avatarPath.startsWith('/') ? avatarPath.slice(1) : avatarPath}`;
+  return `/api/storage/avatars/${cleanPath}`;
 };
 
 export default function ProfilePage() {
