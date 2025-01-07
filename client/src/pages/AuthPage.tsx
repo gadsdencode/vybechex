@@ -55,7 +55,19 @@ export default function AuthPage() {
       } else {
         const response = await register(data);
         if (response.ok) {
-          setLocation("/");
+          // Redirect to Stripe payment
+          const subscriptionResponse = await fetch('/api/create-subscription', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include'
+          });
+          
+          if (!subscriptionResponse.ok) {
+            throw new Error('Failed to create subscription');
+          }
+          
+          const { url } = await subscriptionResponse.json();
+          window.location.href = url;
         }
       }
     } catch (error: any) {

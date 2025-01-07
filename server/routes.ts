@@ -6,11 +6,15 @@ import type { Request, Response, NextFunction } from 'express';
 import type { SelectUser } from '@db/schema';
 import { sql } from 'drizzle-orm';
 import { and, eq, or, desc } from 'drizzle-orm';
+import multer, { FileFilterCallback } from 'multer';
+import { Client } from '@replit/object-storage';
+import { randomUUID } from 'crypto';
 import { 
   interestCategories, 
   interests, 
   matches, 
-  users, 
+  users,
+  profileProgress,
   userInterests,
   messages,
   type UserInterest,
@@ -18,10 +22,16 @@ import {
   type InterestCategory as DBInterestCategory,
   type User,
   type Match,
-  type Message 
+  type Message,
+  achievements,
+  userAchievements,
+  type Achievement,
+  type UserAchievement,
+  type ProfileProgress 
 } from '@db/schema';
 import { generateEnhancedChatSuggestions, generateEventSuggestions, craftPersonalizedMessage, generateEventConversationStarter } from './utils/suggestions';
 import { validateUser } from './middleware/auth';
+import path from 'path';
 
 type MatchStatus = 'none' | 'requested' | 'pending' | 'accepted' | 'rejected' | 'potential';
 type InterestCategory = 'value' | 'personality' | 'hobby';
@@ -84,6 +94,12 @@ interface UserInterestResult {
     name: string;
     categoryId: number;
   } | null;
+}
+
+// Extend Request type to include file from multer
+interface AuthenticatedFileRequest extends Request {
+  user: SelectUser;
+  file?: Express.Multer.File;
 }
 
 // Helper function to get category from categoryId
@@ -288,6 +304,11 @@ interface SuggestionContext {
   compatibilityScore?: number;
 }
 
+// Helper function to calculate user level based on points
+function calculateLevel(points: number): number {
+  return Math.floor(points / 1000) + 1;
+}
+
 export function registerRoutes(app: Express): Server {
   const httpServer = createServer(app);
 
@@ -301,6 +322,24 @@ export function registerRoutes(app: Express): Server {
   app.get('/health', (req: Request, res: Response) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() });
   });
+
+  // Configure multer for memory storage
+  const upload = multer({ 
+    storage: multer.memoryStorage(),
+    limits: {
+      fileSize: 5 * 1024 * 1024, // 5MB limit
+    },
+    fileFilter: (req: Request, file: Express.Multer.File, cb: FileFilterCallback) => {
+      if (!file.mimetype.startsWith('image/')) {
+        cb(new Error('Only image files are allowed'));
+        return;
+      }
+      cb(null, true);
+    }
+  });
+
+  // Initialize Replit Object Storage client
+  const storage = new Client();
 
   // Get chat suggestions for a match
   app.post('/api/matches/suggestions', validateUser, ensureAuthenticated, async (req: Request, res: Response, next: NextFunction) => {
@@ -1216,8 +1255,370 @@ export function registerRoutes(app: Express): Server {
     }
   });
 
+  // Update user profile
+  app.post('/api/user/profile', validateUser, ensureAuthenticated, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!isAuthenticated(req)) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Unauthorized' 
+        });
+      }
+
+      const userId = req.user.id;
+      const { name, bio } = req.body;
+
+      // Update user profile
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          name: name || '',
+          bio: bio || ''
+        })
+        .where(eq(users.id, userId))
+        .returning();
+
+      if (!updatedUser) {
+        throw new Error('Failed to update user profile');
+      }
+
+      res.json({
+        success: true,
+        message: 'Profile updated successfully',
+        user: updatedUser
+      });
+    } catch (error) {
+      console.error('Error updating profile:', error);
+      next(error);
+    }
+  });
+
+  // Upload profile image
+  app.post('/api/user/profile/image', validateUser, ensureAuthenticated, upload.single('image'), (async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!isAuthenticated(req)) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Unauthorized' 
+        });
+      }
+
+      if (!req.file) {
+        return res.status(400).json({
+          success: false,
+          message: 'No image file provided'
+        });
+      }
+
+      const userId = req.user!.id;
+      const file = req.file;
+      const fileExtension = file.mimetype.split('/')[1];
+      const fileName = `avatars/${userId}-${randomUUID()}.${fileExtension}`;
+
+      // Upload to Replit Object Storage
+      const { ok, error } = await storage.uploadFromBytes(
+        fileName,
+        file.buffer
+      );
+
+      if (!ok) {
+        console.error('Error uploading to object storage:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to upload image'
+        });
+      }
+
+      // Store just the filename in the database
+      const avatarUrl = fileName;  // Just store avatars/userid-uuid.ext
+
+      // Update user's avatar in database
+      const [updatedUser] = await db
+        .update(users)
+        .set({
+          avatar: avatarUrl
+        })
+        .where(eq(users.id, userId))
+        .returning();
+
+      if (!updatedUser) {
+        throw new Error('Failed to update user avatar');
+      }
+
+      // Update profile progress
+      await db
+        .update(profileProgress)
+        .set({
+          sections: sql`jsonb_set(sections, '{avatar}', 'true'::jsonb)`,
+          lastUpdated: new Date()
+        })
+        .where(eq(profileProgress.userId, userId));
+
+      res.json({
+        success: true,
+        message: 'Profile image updated successfully',
+        user: updatedUser
+      });
+    } catch (error) {
+      console.error('Error uploading profile image:', error);
+      next(error);
+    }
+  }) as express.RequestHandler);
+
+  // Get achievements and progress
+  app.get('/api/achievements', validateUser, ensureAuthenticated, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!isAuthenticated(req)) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Unauthorized' 
+        });
+      }
+
+      const userId = req.user.id;
+
+      // Get all achievements
+      const allAchievements = await db
+        .select()
+        .from(achievements);
+
+      // Get user's unlocked achievements
+      const unlockedAchievements = await db
+        .select()
+        .from(userAchievements)
+        .where(eq(userAchievements.userId, userId));
+
+      // Get user's profile progress
+      const [userProgress] = await db
+        .select()
+        .from(profileProgress)
+        .where(eq(profileProgress.userId, userId))
+        .limit(1);
+
+      // If no progress record exists, create one
+      if (!userProgress) {
+        const [newProgress] = await db
+          .insert(profileProgress)
+          .values({
+            userId,
+            sections: {
+              basicInfo: false,
+              avatar: false,
+              interests: false,
+              quiz: false,
+              bio: false,
+              connections: false
+            } as const,
+            totalPoints: 0,
+            level: 1,
+            lastUpdated: new Date()
+          })
+          .returning();
+
+        res.json({
+          achievements: allAchievements,
+          userAchievements: [],
+          progress: newProgress
+        });
+        return;
+      }
+
+      res.json({
+        achievements: allAchievements,
+        userAchievements: unlockedAchievements,
+        progress: userProgress
+      });
+    } catch (error) {
+      console.error('Error fetching achievements:', error);
+      next(error);
+    }
+  });
+
+  // Update profile progress
+  app.post('/api/profile/progress', validateUser, ensureAuthenticated, async (req: Request, res: Response, next: NextFunction) => {
+    try {
+      if (!isAuthenticated(req)) {
+        return res.status(401).json({ 
+          success: false, 
+          message: 'Unauthorized' 
+        });
+      }
+
+      const userId = req.user.id;
+      const { section, completed } = req.body;
+
+      if (!section || typeof completed !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid request body'
+        });
+      }
+
+      // Get current progress
+      const [currentProgress] = await db
+        .select()
+        .from(profileProgress)
+        .where(eq(profileProgress.userId, userId))
+        .limit(1);
+
+      if (!currentProgress) {
+        return res.status(404).json({
+          success: false,
+          message: 'Progress record not found'
+        });
+      }
+
+      // Update the specified section
+      const updatedSections = {
+        ...currentProgress.sections,
+        [section]: completed
+      };
+
+      // Get all achievements that might be unlocked by this update
+      const potentialAchievements = await db
+        .select()
+        .from(achievements)
+        .where(sql`criteria->>'condition' = ${section}`);
+
+      // Get already unlocked achievements
+      const unlockedAchievementIds = (await db
+        .select()
+        .from(userAchievements)
+        .where(eq(userAchievements.userId, userId)))
+        .map(ua => ua.achievementId);
+
+      // Filter achievements that should be unlocked
+      const newAchievements = potentialAchievements.filter(achievement => 
+        completed && // Only if the section was completed
+        !unlockedAchievementIds.includes(achievement.id) // And achievement wasn't already unlocked
+      );
+
+      // Calculate new points
+      const additionalPoints = newAchievements.reduce((sum, achievement) => sum + achievement.points, 0);
+      const newTotalPoints = currentProgress.totalPoints + additionalPoints;
+
+      // Calculate new level
+      const newLevel = calculateLevel(newTotalPoints);
+      const leveledUp = newLevel > currentProgress.level;
+
+      // Update progress and unlock achievements in a transaction
+      await db.transaction(async (tx) => {
+        // Update progress
+        await tx
+          .update(profileProgress)
+          .set({
+            sections: updatedSections,
+            totalPoints: newTotalPoints,
+            level: newLevel,
+            lastUpdated: new Date()
+          })
+          .where(eq(profileProgress.userId, userId));
+
+        // Insert new achievements
+        if (newAchievements.length > 0) {
+          await tx
+            .insert(userAchievements)
+            .values(
+              newAchievements.map(achievement => ({
+                userId,
+                achievementId: achievement.id,
+                unlockedAt: new Date()
+              }))
+            );
+        }
+      });
+
+      res.json({
+        success: true,
+        newAchievements,
+        levelUp: leveledUp,
+        newLevel: newLevel
+      });
+    } catch (error) {
+      console.error('Error updating progress:', error);
+      next(error);
+    }
+  });
+
   // Register error handler
   app.use(errorHandler);
+
+  // Add storage route handler
+  app.get('/api/avatars/:filename(*)', async (req, res) => {
+    try {
+      const fileName = req.params.filename;
+      
+      // Validate filename
+      if (!fileName || fileName.includes('..')) {
+        console.error('Invalid filename requested:', fileName);
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid filename'
+        });
+      }
+
+      // Handle the case where the full replit-objstore URL is passed
+      if (fileName.includes('replit-objstore')) {
+        return res.redirect(fileName);
+      }
+
+      // Ensure the avatars/ prefix is present
+      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${fileName}`;
+      
+      console.log('Attempting to serve file:', filePath);
+      
+      try {
+        const result = await storage.downloadAsBytes(filePath);
+        
+        if (!result?.ok) {
+          console.error('File not found in storage:', filePath);
+          throw new Error('File not found');
+        }
+
+        const buffer = result.value[0];
+
+        // Determine content type
+        const contentType = fileName.toLowerCase().endsWith('.jpg') || fileName.toLowerCase().endsWith('.jpeg')
+          ? 'image/jpeg'
+          : fileName.toLowerCase().endsWith('.png')
+          ? 'image/png'
+          : fileName.toLowerCase().endsWith('.gif')
+          ? 'image/gif'
+          : 'application/octet-stream';
+
+        // Set appropriate headers
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Content-Length', buffer.length.toString());
+        
+        console.log('Successfully serving file:', filePath, 'Content-Type:', contentType);
+        res.send(buffer);
+      } catch (error) {
+        console.error('Error serving file from storage:', filePath, error);
+        
+        // Always try to serve default avatar as fallback for avatar requests
+        const defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
+        if (require('fs').existsSync(defaultAvatarPath)) {
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=31536000');
+          return res.sendFile(defaultAvatarPath);
+        }
+        
+        res.status(404).json({
+          success: false,
+          message: 'File not found',
+          path: filePath
+        });
+      }
+    } catch (error: any) {
+      console.error('Error in storage route:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
+    }
+  });
 
   return httpServer;
 }

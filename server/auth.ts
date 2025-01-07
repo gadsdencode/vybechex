@@ -9,8 +9,26 @@ import { users, matches, insertUserSchema, type SelectUser } from "@db/schema";
 import { db } from "@db";
 import { eq, or, and } from "drizzle-orm";
 import { z } from "zod";
+import Stripe from 'stripe';
 
 const scryptAsync = promisify(scrypt);
+
+// Initialize Stripe with proper error handling
+let stripe: Stripe | null = null;
+if (process.env.STRIPE_SECRET_KEY) {
+  try {
+    stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
+      apiVersion: '2024-12-18.acacia',
+      typescript: true
+    });
+    console.log('Stripe initialized successfully');
+  } catch (error) {
+    console.error('Failed to initialize Stripe:', error);
+    // Continue without Stripe - application can still function
+  }
+} else {
+  console.warn('STRIPE_SECRET_KEY not set - Stripe features will be disabled');
+}
 
 const loginSchema = z.object({
   username: z.string().min(1, "Username is required"),
@@ -167,29 +185,32 @@ export async function setupAuth(app: Express) {
 
   const MemoryStore = createMemoryStore(session);
   const sessionStore = new MemoryStore({
-    checkPeriod: 86400000, // prune expired entries every 24h
-    stale: false, // Delete expired sessions immediately
-    ttl: 24 * 60 * 60 * 1000, // 24 hours
+    checkPeriod: 86400000, // 24 hours
+    ttl: 604800000, // 7 days
+    noDisposeOnSet: true, // Prevent disposal on session updates
     dispose: (key: string, sess: session.SessionData) => {
-      // Cleanup any resources when session expires
-      console.log(`Session ${key} expired`);
+      // Only log in development and only for actual expirations
+      if (process.env.NODE_ENV === 'development' && !sess.cookie?.expires) {
+        console.debug(`Session ${key} expired naturally`);
+      }
     }
   });
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: true, // Changed to true to ensure session is saved
+    resave: true, // Enable session updates
     saveUninitialized: false,
-    rolling: true,
+    rolling: true, // Reset expiration on each request
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000,
-      secure: false,
+      maxAge: 604800000, // 7 days
+      secure: app.get("env") === "production",
       sameSite: "lax",
       httpOnly: true,
       path: '/'
     },
     store: sessionStore,
     name: 'sid',
+    proxy: app.get("env") === "production" // Trust proxy in production
   };
 
   if (app.get("env") === "production") {
@@ -282,12 +303,38 @@ export async function setupAuth(app: Express) {
       }
 
       const hashedPassword = await crypto.hash(password);
+      
+      let stripeCustomerId = null;
+      
+      try {
+        // Only attempt to create Stripe customer if stripe is initialized
+        if (stripe) {
+          const customer = await stripe.customers.create({
+            email: username,
+            metadata: {
+              username: username
+            }
+          });
+          stripeCustomerId = customer.id;
+        }
+      } catch (stripeError) {
+        console.error('Stripe customer creation failed:', stripeError);
+        // Continue with user creation even if Stripe fails
+      }
 
       const [newUser] = await db
         .insert(users)
         .values({
           username,
           password: hashedPassword,
+          name: '',
+          bio: '',
+          quizCompleted: false,
+          personalityTraits: {},
+          avatar: '/default-avatar.png',
+          level: 1,
+          xp: 0,
+          lastRewardClaimed: new Date()
         })
         .returning();
 

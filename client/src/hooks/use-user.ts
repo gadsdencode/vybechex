@@ -80,7 +80,6 @@ export function useUser() {
 
         if (response.status === 401) {
           console.log("User not authenticated");
-          // Don't clear auth data here, just return null
           return null;
         }
 
@@ -100,7 +99,8 @@ export function useUser() {
             id: user.id,
             username: user.username,
             name: user.name || user.username,
-            avatar: user.avatar || "/default-avatar.png",
+            // Handle avatar URL properly
+            avatar: user.avatar ? (user.avatar.startsWith('http') ? user.avatar : `/api/avatars/${user.avatar}`) : '/default-avatar.png',
             isGroupCreator: user.isGroupCreator || false,
             quizCompleted: user.quizCompleted || false
           });
@@ -110,7 +110,6 @@ export function useUser() {
         return null;
       } catch (error) {
         console.error("Error in user fetch:", error);
-        // Don't clear auth data on network errors
         return null;
       }
     },
@@ -118,7 +117,6 @@ export function useUser() {
     gcTime: 1000 * 60 * 5,
     refetchOnWindowFocus: true,
     retry: (failureCount, error) => {
-      // Retry up to 3 times, but not for 401 errors
       if (error instanceof Error && error.message.includes('401')) {
         return false;
       }
@@ -140,7 +138,7 @@ export function useUser() {
             id: user.id,
             username: user.username,
             name: user.name || user.username,
-            avatar: user.avatar || "/default-avatar.png",
+            avatar: user.avatar,
             isGroupCreator: user.isGroupCreator || false
           });
 

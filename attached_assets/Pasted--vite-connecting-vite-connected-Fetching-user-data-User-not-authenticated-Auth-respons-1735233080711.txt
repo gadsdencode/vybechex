@@ -1,0 +1,28 @@
+[vite] connecting...
+[vite] connected.
+Fetching user data...
+User not authenticated
+Auth response: 
+Object {error: "stripe is not defined", stack: "ReferenceError: stripe is not defined↵    at <anonymous>…"}
+error: "stripe is not defined"
+stack: "ReferenceError: stripe is not defined↵ at <anonymous> (/home/runner/workspace/server/auth.ts:287:24)"
+[[Prototype]]: Object
+Auth request failed (500): stripe is not defined
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400
+Auth request error: 
+Error {}
+
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400
+Registration error: 
+Error {}
+message: "stripe is not defined"
+stack: "Error: stripe is not defined↵ at handleAuthRequest (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-user.ts:24:13)↵ at async Object.mutationFn (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/src/hooks/use-user.ts:135:24)"
+get stack: ƒ ()
+set stack: ƒ ()
+[[Prototype]]: Object
