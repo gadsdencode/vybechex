@@ -196,12 +196,12 @@ export async function setupAuth(app: Express) {
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: true, // Changed to true to ensure session is saved
+    resave: false,
     saveUninitialized: false,
     rolling: true,
     cookie: {
-      maxAge: 24 * 60 * 60 * 1000,
-      secure: false,
+      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      secure: app.get("env") === "production",
       sameSite: "lax",
       httpOnly: true,
       path: '/'

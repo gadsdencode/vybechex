@@ -1328,8 +1328,8 @@ export function registerRoutes(app: Express): Server {
         });
       }
 
-      // Get the public URL for Replit Object Storage - using HTTPS and proper domain
-      const avatarUrl = `${process.env.OBJECT_STORAGE_URL || 'https://object-storage.replit.com'}/${fileName}`;
+      // Get the public URL for Replit Object Storage using the current domain
+      const avatarUrl = `/api/storage/${fileName}`;
 
       // Add error handling for the URL
       try {
@@ -1559,3 +1559,24 @@ export function registerRoutes(app: Express): Server {
 
   return httpServer;
 }
+app.get('/api/storage/:filename', async (req, res) => {
+  try {
+    const fileName = req.params.filename;
+    const fileData = await storage.download(`avatars/${fileName}`);
+    
+    if (!fileData) {
+      return res.status(404).sendFile(path.join(__dirname, '../client/public/default-avatar.png'));
+    }
+
+    const contentType = fileName.endsWith('.jpeg') || fileName.endsWith('.jpg') 
+      ? 'image/jpeg' 
+      : 'image/png';
+    
+    res.setHeader('Content-Type', contentType);
+    res.setHeader('Cache-Control', 'public, max-age=31536000');
+    res.send(fileData);
+  } catch (error) {
+    console.error('Error serving avatar:', error);
+    res.status(404).sendFile(path.join(__dirname, '../client/public/default-avatar.png'));
+  }
+});
