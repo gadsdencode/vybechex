@@ -1602,20 +1602,19 @@ export function registerRoutes(app: Express): Server {
       } catch (error) {
         console.error('Error serving file from storage:', filePath, error);
         
-        // Check if default avatar exists in public directory
-        const defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
-        
-        if (require('fs').existsSync(defaultAvatarPath)) {
-          console.log('Serving default avatar from:', defaultAvatarPath);
-          res.setHeader('Content-Type', 'image/png');
-          res.setHeader('Cache-Control', 'public, max-age=31536000');
-          return res.sendFile(defaultAvatarPath);
+        // Always try to serve default avatar as fallback for avatar requests
+        if (filePath.includes('avatar')) {
+          const defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
+          if (require('fs').existsSync(defaultAvatarPath)) {
+            res.setHeader('Content-Type', 'image/jpeg');
+            res.setHeader('Cache-Control', 'public, max-age=31536000');
+            return res.sendFile(defaultAvatarPath);
+          }
         }
         
-        // If all else fails, return a 404
         res.status(404).json({
           success: false,
-          message: 'Avatar not found',
+          message: 'File not found',
           path: filePath
         });
       }
