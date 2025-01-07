@@ -32,8 +32,8 @@ const getAvatarUrl = (avatarPath: string): string => {
     return avatarPath;
   }
 
-  // Otherwise use our API storage endpoint
-  return `/api/storage/${avatarPath}`;
+  // Use the avatarPath directly since it already includes the avatars/ prefix
+  return `/api/storage${avatarPath.startsWith('/') ? avatarPath : `/${avatarPath}`}`;
 };
 
 export default function ProfilePage() {
