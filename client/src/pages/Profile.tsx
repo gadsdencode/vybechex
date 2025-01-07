@@ -26,16 +26,12 @@ const getAvatarUrl = (avatarPath: string): string => {
   if (!avatarPath || avatarPath === '/default-avatar.png') {
     return DEFAULT_AVATAR;
   }
-
-  // If it's already a full URL, extract just the filename
-  if (avatarPath.includes('replit-objstore')) {
-    const filename = avatarPath.split('/').pop();
-    return `/api/storage/avatars/${filename}`;
-  }
   
-  // Handle relative paths
-  const cleanPath = avatarPath.replace(/^\/?(api\/storage\/)?/, '');
-  return `/api/storage/${cleanPath}`;
+  // Remove any leading slashes and 'avatars/' prefix if present
+  const cleanPath = avatarPath.replace(/^\/?(avatars\/)?/, '');
+  
+  // Return the path through our API storage endpoint
+  return `/api/storage/avatars/${cleanPath}`;
 };
 
 export default function ProfilePage() {

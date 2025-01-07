@@ -67,9 +67,6 @@ export function useUser() {
 
   const { data: user, isLoading } = useQuery<SelectUser | null>({
     queryKey: ['/api/user'],
-    retry: 1,
-    staleTime: 30000,
-    cacheTime: 60000,
     queryFn: async () => {
       try {
         console.log('Fetching user data...');
