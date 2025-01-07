@@ -1330,14 +1330,12 @@ export function registerRoutes(app: Express): Server {
       }
 
       // Get the public URL for Replit Object Storage using the current domain
-      const avatarUrl = `/api/storage/${fileName}`;
+      // Store the direct Replit Object Storage URL
+      const avatarUrl = `https://replit-objstore-42ba1808-b6bc-4955-a490-87bc85fa3955.replit.dev/${fileName}`;
 
-      // Add error handling for the URL
       try {
-        // Get the host from the request
-        const host = req.get('host');
-        const protocol = req.protocol;
-        const fullUrl = `${protocol}://${host}${avatarUrl}`;
+        // Verify the URL is accessible directly
+        const urlCheck = await fetch(avatarUrl, { method: 'HEAD' });
         
         // Verify the URL is accessible
         const urlCheck = await fetch(fullUrl, { method: 'HEAD' });

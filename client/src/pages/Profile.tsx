@@ -27,14 +27,22 @@ const getAvatarUrl = (avatarPath: string): string => {
     return DEFAULT_AVATAR;
   }
 
-  // Extract filename for any type of URL
+  // If it's already a full URL to object storage, use it directly
+  if (avatarPath.includes('replit-objstore')) {
+    return avatarPath;
+  }
+
+  // For local API endpoint paths, use as is
+  if (avatarPath.startsWith('/api/storage')) {
+    return avatarPath;
+  }
+
+  // Handle just the filename case
   const filename = avatarPath.split('/').pop();
-  
   if (!filename) {
     return DEFAULT_AVATAR;
   }
 
-  // Always use the local API endpoint
   return `/api/storage/avatars/${filename}`;
 };
 
