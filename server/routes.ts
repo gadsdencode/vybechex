@@ -31,6 +31,7 @@ import {
 } from '@db/schema';
 import { generateEnhancedChatSuggestions, generateEventSuggestions, craftPersonalizedMessage, generateEventConversationStarter } from './utils/suggestions';
 import { validateUser } from './middleware/auth';
+import path from 'path';
 
 type MatchStatus = 'none' | 'requested' | 'pending' | 'accepted' | 'rejected' | 'potential';
 type InterestCategory = 'value' | 'personality' | 'hobby';
@@ -1333,8 +1334,13 @@ export function registerRoutes(app: Express): Server {
 
       // Add error handling for the URL
       try {
+        // Get the host from the request
+        const host = req.get('host');
+        const protocol = req.protocol;
+        const fullUrl = `${protocol}://${host}${avatarUrl}`;
+        
         // Verify the URL is accessible
-        const urlCheck = await fetch(avatarUrl, { method: 'HEAD' });
+        const urlCheck = await fetch(fullUrl, { method: 'HEAD' });
         if (!urlCheck.ok) {
           throw new Error('Generated avatar URL is not accessible');
         }
@@ -1561,22 +1567,74 @@ export function registerRoutes(app: Express): Server {
   app.get('/api/storage/:filename', async (req, res) => {
     try {
       const fileName = req.params.filename;
-      const fileData = await storage.download(`avatars/${fileName}`);
       
-      if (!fileData) {
-        return res.status(404).send(Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAGQAAABkCAYAAABw4pVUAAAABmJLR0QA/wD/AP+gvaeTAAAD8UlEQVR4nO3dW4hVVRzH8d+4VFqaTF4qxLQiMyW1kixD6KKUlmUXuryIDylBYQ9FZVQQQbcHX4JeiiACX4JIKrLroyhIRmhqVKRWFGmplZfUGafbw94Dh3Fmzjn7rLX3Wmv/P7DhMGevtf7rv/bM2fusteEYY4wxxhhjjDHGGGOMMcYYY4wxxhhjjKmFccBKYDPwF3AMOAxsAh4HGi3GZSowD/gYaKtDWwu8Cowt6O+eBrwD/NGiLtxagA3AjQ39vW3AI8D6OtQ6CzwPHADmAF2xK1+B7sA9wFvAyToFGW7rADYCE8pQfCuTgW3AIWAVUAMmFVCEL0qV+TdwpE7tKPAX0NlBDWuAGcCzwE7gW+AZ4GpP9bRqPcAy4AugE9gDLAKu8VR/u3RlP7CD/OFYlBbgPeAVYCEwErgGWAP8BqwDRhVQi2/jgbuBF4HfgXeB6UUN8RpwAXgLmFjQ93vXoF4+BH4HXgbuA0YXUFcRxgLzgZeAfcB64N4iO/+oThGPl/GHFqgGzAZ+BL4GngJuLaDeW4DlwBfAj8AsYEQBdZSlhqTVgO+BDcCTwE0e6xsHPAl8CvwEPAGM8FhHWdVIWi2r4QNgE7AEuBG4wkFdlwN3Ai8D+4E1wJ1YCIPVgLuA74CtwDLgdmBcG3WNA+4GVgLfAB8Dc1sca6pnBEkI3wMfAS8A84CbgVFD1DUKmE7yUeJn4GPgIZKPvGZoNZKWvUPagG+BT4DVwEJgFsmtC1cC44GpwBzgcZLhcyfwObAHOI6bN/2QXQY8APyS/bHNwE/AL8BB4ATJ4+sEyQjqLDABmAhcD0zJtsnATOAOkjf+XuBrktvm2Zz1h+oC8EG2DSc7bBlwmmREXiC5jd5JMtK6geuAG7JtSva1DdgP/A78CRzPjjmVfd/5rI6zQK+DusNxATiWbcakIrBgwghkv4OamoGVOep+FEXWQhYB/+U45r0iCyzKjyQP7tjPdTFtbV5Fh2Yh8Z8Dq9q+yltwSMYDf+MnlE3A1RnqnwOcw08op4ApGeoP0nz8BLIbGJOx/unAEfyEMj9j/UFagZ9AXnNQ/1igGT+hLHZQf3BW4SeQex3VvxQ/gZwGbnNUf1Dm4yeQJx3WvwA/gfQBDzqsPyhz8BPISsf1TwJ+w08o8xzXH5SZ+AlkXQH1X0fy8NEXykkUyv/MwE8gHxVUfw34DD+hzCmo/qBMx08gW4ssAPgEP6HcU2D9QZmGn0B2FFxHN8nDR9ehvF9wDUGZgp9A9pZQx/UkDx99hHIG+44QgJvwE8iBkmoZSfJ6Qh+hnAVuL6mWYEwieW+vj0AOl1hLjeSFVB+hnCd5odWQXBF0+bgmqKHQFAZjjDHGGGOMMcYYY4wxxhhjjDHGGGOMMcYYY4wxxhhjTMX8D87PO0KnxtGaAAAAAElFTkSuQmCC')).type('image/png');
+      // Validate filename
+      if (!fileName || fileName.includes('..')) {
+        console.error('Invalid filename requested:', fileName);
+        return res.status(400).json({
+          success: false,
+          message: 'Invalid filename'
+        });
       }
-
-      const contentType = fileName.endsWith('.jpeg') || fileName.endsWith('.jpg') 
-        ? 'image/jpeg' 
-        : 'image/png';
       
-      res.setHeader('Content-Type', contentType);
-      res.setHeader('Cache-Control', 'public, max-age=31536000');
-      res.send(fileData);
-    } catch (error) {
-      console.error('Error serving avatar:', error);
-      res.status(404).sendFile(path.join(__dirname, '../client/public/default-avatar.png'));
+      // Ensure the file path is properly constructed
+      const filePath = fileName.startsWith('avatars/') ? fileName : `avatars/${fileName}`;
+      
+      console.log('Attempting to serve file:', filePath);
+      
+      try {
+        const result = await storage.downloadAsBytes(filePath);
+        
+        if (!result?.ok) {
+          console.error('File not found in storage:', filePath);
+          throw new Error('File not found');
+        }
+
+        const buffer = result.value[0];
+
+        // Determine content type
+        const contentType = fileName.toLowerCase().endsWith('.jpg') || fileName.toLowerCase().endsWith('.jpeg')
+          ? 'image/jpeg'
+          : fileName.toLowerCase().endsWith('.png')
+          ? 'image/png'
+          : fileName.toLowerCase().endsWith('.gif')
+          ? 'image/gif'
+          : 'application/octet-stream';
+
+        // Set appropriate headers
+        res.setHeader('Content-Type', contentType);
+        res.setHeader('Cache-Control', 'public, max-age=31536000');
+        res.setHeader('Content-Length', buffer.length.toString());
+        
+        console.log('Successfully serving file:', filePath, 'Content-Type:', contentType);
+        res.send(buffer);
+      } catch (error) {
+        console.error('Error serving file from storage:', filePath, error);
+        
+        // Check if default avatar exists in public directory
+        const defaultAvatarPath = path.join(process.cwd(), 'public', 'default-avatar.png');
+        
+        if (require('fs').existsSync(defaultAvatarPath)) {
+          console.log('Serving default avatar from:', defaultAvatarPath);
+          res.setHeader('Content-Type', 'image/png');
+          res.setHeader('Cache-Control', 'public, max-age=31536000');
+          return res.sendFile(defaultAvatarPath);
+        }
+        
+        // If all else fails, return a 404
+        res.status(404).json({
+          success: false,
+          message: 'Avatar not found',
+          path: filePath
+        });
+      }
+    } catch (error: any) {
+      console.error('Error in storage route:', error);
+      res.status(500).json({ 
+        success: false, 
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
   });
 

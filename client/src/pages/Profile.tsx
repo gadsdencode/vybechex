@@ -11,7 +11,7 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { useToast } from "@/hooks/use-toast";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 
 const profileSchema = z.object({
   name: z.string().min(2, "Name must be at least 2 characters").max(50, "Name must be less than 50 characters").nullable(),
@@ -20,10 +20,27 @@ const profileSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
+const DEFAULT_AVATAR = 'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgc3Ryb2tlPSJjdXJyZW50Q29sb3IiIHN0cm9rZS13aWR0aD0iMiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBjbGFzcz0ibHVjaWRlIGx1Y2lkZS11c2VyIj48cGF0aCBkPSJNMjAgMjF2LTJhNCA0IDAgMCAwLTQtNEg4YTQgNCAwIDAgMC00IDR2MiIvPjxjaXJjbGUgY3g9IjEyIiBjeT0iNyIgcj0iNCIvPjwvc3ZnPg==';
+
+const getAvatarUrl = (avatarPath: string): string => {
+  if (!avatarPath || avatarPath === '/default-avatar.png') {
+    return DEFAULT_AVATAR;
+  }
+  
+  // If it's already a full URL, return as is
+  if (avatarPath.startsWith('http')) {
+    return avatarPath;
+  }
+  
+  // Return the path through our API storage endpoint
+  return `/api/storage/${avatarPath.startsWith('/') ? avatarPath.slice(1) : avatarPath}`;
+};
+
 export default function ProfilePage() {
   const { user, isLoading } = useUser();
   const { toast } = useToast();
   const queryClient = useQueryClient();
+  const [avatarLoadError, setAvatarLoadError] = useState<boolean>(false);
 
   const form = useForm<ProfileFormValues>({
     resolver: zodResolver(profileSchema),
@@ -128,6 +145,51 @@ export default function ProfilePage() {
     await updateProfile.mutateAsync(values);
   }
 
+  const renderAvatar = (showUpload: boolean = true) => (
+    <div className="relative group">
+      <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center overflow-hidden">
+        {user?.avatar && !avatarLoadError ? (
+          <img 
+            src={getAvatarUrl(user.avatar)}
+            alt={user?.name || 'Profile'} 
+            className="h-full w-full object-cover"
+            onError={(e) => {
+              const target = e.target as HTMLImageElement;
+              target.onerror = null;
+              console.error('Failed to load avatar:', target.src);
+              setAvatarLoadError(true);
+            }}
+          />
+        ) : (
+          <User className="h-10 w-10 text-muted-foreground" />
+        )}
+      </div>
+      {showUpload && (
+        <>
+          <label 
+            htmlFor="avatar-upload" 
+            className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-opacity"
+          >
+            <Upload className="h-6 w-6" />
+            <input
+              type="file"
+              id="avatar-upload"
+              className="hidden"
+              accept="image/*"
+              onChange={handleImageUpload}
+              disabled={uploadImage.isPending}
+            />
+          </label>
+          {uploadImage.isPending && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-full">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  );
+
   if (isLoading) {
     return (
       <div className="flex items-center justify-center min-h-screen">
@@ -147,44 +209,7 @@ export default function ProfilePage() {
           <Card>
             <CardHeader className="space-y-1">
               <div className="flex items-center gap-4">
-                <div className="relative group">
-                  <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                    {user.avatar ? (
-                      <img 
-                        src={user.avatar} 
-                        alt="Profile" 
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.onerror = null; // Prevent infinite loop
-                          console.error('Failed to load avatar:', target.src);
-                          target.src = '/default-avatar.png'; // Set default avatar
-                        }}
-                      />
-                    ) : (
-                      <User className="h-10 w-10 text-muted-foreground" />
-                    )}
-                  </div>
-                  <label 
-                    htmlFor="avatar-upload" 
-                    className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-opacity"
-                  >
-                    <Upload className="h-6 w-6" />
-                    <input
-                      type="file"
-                      id="avatar-upload"
-                      className="hidden"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      disabled={uploadImage.isPending}
-                    />
-                  </label>
-                  {uploadImage.isPending && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-full">
-                      <Loader2 className="h-6 w-6 animate-spin" />
-                    </div>
-                  )}
-                </div>
+                {renderAvatar(false)}
                 <div>
                   <CardTitle>Live Profile</CardTitle>
                   <CardDescription>
@@ -210,44 +235,7 @@ export default function ProfilePage() {
           <Card>
             <CardHeader className="space-y-1">
               <div className="flex items-center gap-4">
-                <div className="relative group">
-                  <div className="h-20 w-20 rounded-full bg-muted flex items-center justify-center overflow-hidden">
-                    {user.avatar ? (
-                      <img 
-                        src={user.avatar} 
-                        alt="Profile" 
-                        className="h-full w-full object-cover"
-                        onError={(e) => {
-                          const target = e.target as HTMLImageElement;
-                          target.onerror = null; // Prevent infinite loop
-                          console.error('Failed to load avatar:', target.src);
-                          target.src = '/default-avatar.png'; // Set default avatar
-                        }}
-                      />
-                    ) : (
-                      <User className="h-10 w-10 text-muted-foreground" />
-                    )}
-                  </div>
-                  <label 
-                    htmlFor="avatar-upload-edit" 
-                    className="absolute inset-0 flex items-center justify-center bg-black/50 text-white opacity-0 group-hover:opacity-100 rounded-full cursor-pointer transition-opacity"
-                  >
-                    <Upload className="h-6 w-6" />
-                    <input
-                      type="file"
-                      id="avatar-upload-edit"
-                      className="hidden"
-                      accept="image/*"
-                      onChange={handleImageUpload}
-                      disabled={uploadImage.isPending}
-                    />
-                  </label>
-                  {uploadImage.isPending && (
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-white rounded-full">
-                      <Loader2 className="h-6 w-6 animate-spin" />
-                    </div>
-                  )}
-                </div>
+                {renderAvatar(true)}
                 <div>
                   <CardTitle>Edit Profile</CardTitle>
                   <CardDescription>

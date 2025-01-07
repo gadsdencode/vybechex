@@ -14,6 +14,9 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: false }));
 app.use('/api', stripeRouter);
 
+// Serve static files from public directory
+app.use(express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), '../client/public')));
+
 app.use("/copilotkit", express.static(path.join(path.dirname(fileURLToPath(import.meta.url)), './copilotkit')));
 
 // Request logging middleware

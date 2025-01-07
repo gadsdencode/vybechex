@@ -18,7 +18,7 @@ let stripe: Stripe | null = null;
 if (process.env.STRIPE_SECRET_KEY) {
   try {
     stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-      apiVersion: '2023-10-16',
+      apiVersion: '2024-12-18.acacia',
       typescript: true
     });
     console.log('Stripe initialized successfully');
@@ -185,24 +185,24 @@ export async function setupAuth(app: Express) {
 
   const MemoryStore = createMemoryStore(session);
   const sessionStore = new MemoryStore({
-    checkPeriod: 24 * 60 * 60 * 1000, // Check once per day
-    stale: true, // Keep stale sessions
-    ttl: 7 * 24 * 60 * 60 * 1000, // 7 days
+    checkPeriod: 86400000, // 24 hours
+    ttl: 604800000, // 7 days
+    noDisposeOnSet: true, // Prevent disposal on session updates
     dispose: (key: string, sess: session.SessionData) => {
-      // Only log in development
-      if (process.env.NODE_ENV === 'development') {
-        console.debug(`Session ${key} expired`);
+      // Only log in development and only for actual expirations
+      if (process.env.NODE_ENV === 'development' && !sess.cookie?.expires) {
+        console.debug(`Session ${key} expired naturally`);
       }
     }
   });
 
   const sessionSettings: session.SessionOptions = {
     secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: false,
+    resave: true, // Enable session updates
     saveUninitialized: false,
-    rolling: true,
+    rolling: true, // Reset expiration on each request
     cookie: {
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      maxAge: 604800000, // 7 days
       secure: app.get("env") === "production",
       sameSite: "lax",
       httpOnly: true,
@@ -210,6 +210,7 @@ export async function setupAuth(app: Express) {
     },
     store: sessionStore,
     name: 'sid',
+    proxy: app.get("env") === "production" // Trust proxy in production
   };
 
   if (app.get("env") === "production") {
@@ -326,7 +327,14 @@ export async function setupAuth(app: Express) {
         .values({
           username,
           password: hashedPassword,
-          stripeCustomerId,
+          name: '',
+          bio: '',
+          quizCompleted: false,
+          personalityTraits: {},
+          avatar: '/default-avatar.png',
+          level: 1,
+          xp: 0,
+          lastRewardClaimed: new Date()
         })
         .returning();
 
