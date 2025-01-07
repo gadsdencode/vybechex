@@ -1,0 +1,55 @@
+[vite] connecting...
+[vite] connected.
+Fetching user data...
+User not authenticated
+[vite] hot updated: /src/pages/Profile.tsx
+[vite] hot updated: /src/styles/globals.css
+Fetching user data...
+[vite] hot updated: /src/App.tsx
+[vite] hot updated: /src/styles/globals.css
+[vite] hot updated: /src/components/Navigation.tsx
+[vite] hot updated: /src/pages/Home.tsx
+[vite] hot updated: /src/pages/AuthPage.tsx
+[vite] hot updated: /src/pages/Profile.tsx
+[vite] hot updated: /src/pages/Matches.tsx
+[vite] hot updated: /src/pages/Chat.tsx
+[vite] hot updated: /src/components/NetworkGraph.tsx
+[vite] hot updated: /src/components/CreateMatchWizard.tsx
+User not authenticated
+Auth response: 
+Object {success: true, message: "Login successful", user: {…}}
+Login successful: 
+Object {success: true, message: "Login successful", user: {…}}
+Fetching user data...
+Login successful: 
+Object {ok: true, user: {…}}
+ok: true
+user: Object
+id: 5
+username: "jordan.martens@osscontact.com"
+[[Prototype]]: Object
+[[Prototype]]: Object
+User data fetched: 
+Object {success: true, user: {…}}
+success: true
+user: Object
+avatar: "https://replit-objstore-42ba1808-b6bc-4955-a490-87bc85fa3955.replit.dev/avatars/5-0d818197-6b8f-42cb-9be3-ac7b64850e8d.jpeg"
+bio: "AI dev"
+createdAt: "2025-01-06T00:02:05.326Z"
+id: 5
+isGroupCreator: false
+lastRewardClaimed: null
+level: 1
+name: "Jordan Martens"
+password: "478c40b48c167e7cf07460b6811b7b125052f466565a28503fdc45fdbf6005a99adb81033486eb618e73035b2de703196561fe38346d0ae2b7e89d59456ddf6f.b475c905fb8179a4916f4d0bc19885e2"
+personalityTraits: Object
+quizCompleted: true
+username: "jordan.martens@osscontact.com"
+xp: 0
+[[Prototype]]: Object
+[[Prototype]]: Object
+Failed to load avatar: https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/api/storage/avatars/https://replit-objstore-42ba1808-b6bc-4955-a490-87bc85fa3955.replit.dev/avatars/5-0d818197-6b8f-42cb-9be3-ac7b64850e8d.jpeg
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:17465)
+at new t (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:12630)
+at t.value (https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:32766)
+at https://7975dfb1-a3db-4ca1-95e5-67899b0ac80d-00-29g2iqzdk1oys.riker.replit.dev/__replco/static/devtools/eruda/3.2.3/eruda.js:2:34400
