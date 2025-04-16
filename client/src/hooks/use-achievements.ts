@@ -1,17 +1,29 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useToast } from '@/hooks/use-toast';
-import type { Achievement, ProfileProgress, UserAchievement } from '@db/schema';
+import type { 
+  AchievementDefinition, 
+  UserAchievementProgress, 
+  AchievementCategory 
+} from '@db/schema';
 
 interface AchievementProgress {
-  achievements: Achievement[];
-  userAchievements: UserAchievement[];
-  progress: ProfileProgress;
+  achievements: AchievementDefinition[];
+  userAchievements: UserAchievementProgress[];
+  progress: {
+    level: number;
+    totalPoints: number;
+    sections: Record<string, boolean>;
+  };
 }
 
 interface ProgressUpdate {
-  section: keyof ProfileProgress['sections'];
+  section: string;
   value: boolean;
 }
+
+// XP calculation constants
+const BASE_XP_REQUIREMENT = 1000;
+const XP_SCALING_FACTOR = 1.5;
 
 export function useAchievements() {
   const queryClient = useQueryClient();
@@ -39,7 +51,7 @@ export function useAchievements() {
       }
       return failureCount < 3;
     },
-    staleTime: 30000, // Consider data fresh for 30 seconds
+    staleTime: 30000,
     refetchOnWindowFocus: false,
   });
 
@@ -61,9 +73,8 @@ export function useAchievements() {
 
       const data = await response.json();
       
-      // Show achievement notifications
       if (data.newAchievements?.length > 0) {
-        data.newAchievements.forEach((achievement: Achievement) => {
+        data.newAchievements.forEach((achievement: AchievementDefinition) => {
           toast({
             title: `🎉 Achievement Unlocked: ${achievement.name}`,
             description: `${achievement.description} (+${achievement.points} XP)`,
@@ -72,7 +83,6 @@ export function useAchievements() {
         });
       }
 
-      // Show level up notification if applicable
       if (data.levelUp) {
         toast({
           title: '🌟 Level Up!',
@@ -96,12 +106,33 @@ export function useAchievements() {
     },
   });
 
+  const calculateXpForNextLevel = (currentLevel: number): number => {
+    return Math.round(BASE_XP_REQUIREMENT * Math.pow(XP_SCALING_FACTOR, currentLevel - 1));
+  };
+
   const calculateProgress = () => {
     if (!data?.progress?.sections) return 0;
     
-    const sections = Object.values(data.progress.sections);
-    const completedSections = sections.filter(Boolean).length;
-    return Math.round((completedSections / sections.length) * 100);
+    // Define weights for different section types
+    const sectionWeights: Record<string, number> = {
+      profileComplete: 1.5,  // Higher weight for profile completion
+      bioAdded: 1.2,        // Moderate weight for bio
+      avatarUploaded: 1.0,  // Standard weight for avatar
+    };
+
+    const sections = Object.entries(data.progress.sections);
+    let totalWeight = 0;
+    let completedWeight = 0;
+
+    sections.forEach(([sectionKey, isComplete]) => {
+      const weight = sectionWeights[sectionKey] || 1.0;
+      totalWeight += weight;
+      if (isComplete) {
+        completedWeight += weight;
+      }
+    });
+
+    return Math.round((completedWeight / totalWeight) * 100);
   };
 
   const getUnlockedAchievements = () => {
@@ -115,6 +146,15 @@ export function useAchievements() {
     return data.achievements.filter(a => !unlockedIds.has(a.id));
   };
 
+  const getTotalPossibleXp = () => {
+    if (!data?.achievements) return 0;
+    return data.achievements.reduce((total, achievement) => total + achievement.points, 0);
+  };
+
+  const getAchievementsByCategory = (category: AchievementCategory) => {
+    return data?.achievements.filter(a => a.category === category) || [];
+  };
+
   return {
     achievements: data?.achievements || [],
     unlockedAchievements: getUnlockedAchievements(),
@@ -124,5 +164,8 @@ export function useAchievements() {
     error,
     totalProgress: calculateProgress(),
     updateProgress: updateProfileMutation.mutateAsync,
+    calculateXpForNextLevel,
+    totalPossibleXp: getTotalPossibleXp(),
+    getAchievementsByCategory,
   };
 }

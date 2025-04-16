@@ -231,3 +231,361 @@ export type NewProfileProgress = typeof profileProgress.$inferInsert;
 // Export schema types for auth
 export type SelectUser = User;
 export type InsertUser = NewUser;
+
+export type AchievementCategory = 
+  | 'profile'
+  | 'engagement'
+  | 'social'
+  | 'streak'
+  | 'milestone';
+
+export type AchievementCriteriaType = 
+  | 'profile' 
+  | 'login' 
+  | 'streak' 
+  | 'count' 
+  | 'milestone';
+
+export type TimeFrame = 'daily' | 'weekly' | 'monthly' | 'all_time';
+
+export interface AchievementCriteria {
+  type: AchievementCriteriaType;
+  condition: string;
+  threshold?: number;
+  timeframe?: TimeFrame;
+}
+
+export interface AchievementDefinition {
+  id: string;
+  name: string;
+  description: string;
+  icon: string;
+  points: number;
+  category: AchievementCategory;
+  criteria: AchievementCriteria;
+}
+
+export interface UserAchievementProgress {
+  userId: string;
+  achievementId: string;
+  unlockedAt: Date;
+  progress?: number;
+}
+
+export interface UserStreakData {
+  userId: string;
+  currentStreak: number;
+  longestStreak: number;
+  lastLoginDate: Date;
+  loginCount: {
+    daily: number;
+    weekly: number;
+    monthly: number;
+    allTime: number;
+  };
+  lastReset: {
+    daily: Date;
+    weekly: Date;
+    monthly: Date;
+  };
+}
+
+export const ACHIEVEMENTS: AchievementDefinition[] = [
+  // Profile Achievements
+  {
+    id: 'profile_created',
+    name: 'Welcome Aboard!',
+    description: 'Create your account and join the community',
+    icon: '👋',
+    points: 100,
+    category: 'profile',
+    criteria: { type: 'profile', condition: 'registration' }
+  },
+  {
+    id: 'profile_complete',
+    name: 'Identity Established',
+    description: 'Complete your profile with all information',
+    icon: '📝',
+    points: 200,
+    category: 'profile',
+    criteria: { type: 'profile', condition: 'profileComplete' }
+  },
+  {
+    id: 'avatar_uploaded',
+    name: 'Face in the Crowd',
+    description: 'Upload your first profile picture',
+    icon: '🖼️',
+    points: 150,
+    category: 'profile',
+    criteria: { type: 'profile', condition: 'avatarUploaded' }
+  },
+  {
+    id: 'bio_master',
+    name: 'Wordsmith',
+    description: 'Write a bio that truly captures who you are',
+    icon: '✍️',
+    points: 100,
+    category: 'profile',
+    criteria: { type: 'profile', condition: 'bioAdded' }
+  },
+  {
+    id: 'interests_added',
+    name: 'Passion Finder',
+    description: 'Add at least 5 interests to your profile',
+    icon: '⭐',
+    points: 150,
+    category: 'profile',
+    criteria: { type: 'profile', condition: 'interestsAdded', threshold: 5 }
+  },
+
+  // Login Streaks
+  {
+    id: 'first_login',
+    name: 'First Steps',
+    description: 'Log in for the first time',
+    icon: '🎯',
+    points: 50,
+    category: 'streak',
+    criteria: { type: 'login', condition: 'first_login' }
+  },
+  {
+    id: 'daily_login_3',
+    name: 'Regular Visitor',
+    description: 'Log in 3 days in a row',
+    icon: '📅',
+    points: 150,
+    category: 'streak',
+    criteria: { type: 'streak', condition: 'daily', threshold: 3 }
+  },
+  {
+    id: 'daily_login_7',
+    name: 'Week Warrior',
+    description: 'Log in 7 days in a row',
+    icon: '🗓️',
+    points: 300,
+    category: 'streak',
+    criteria: { type: 'streak', condition: 'daily', threshold: 7 }
+  },
+  {
+    id: 'daily_login_30',
+    name: 'Monthly Master',
+    description: 'Log in 30 days in a row',
+    icon: '🏆',
+    points: 1000,
+    category: 'streak',
+    criteria: { type: 'streak', condition: 'daily', threshold: 30 }
+  },
+  {
+    id: 'daily_login_100',
+    name: 'Centurion',
+    description: 'Maintain a 100-day login streak',
+    icon: '👑',
+    points: 5000,
+    category: 'streak',
+    criteria: { type: 'streak', condition: 'daily', threshold: 100 }
+  },
+  {
+    id: 'weekly_regular',
+    name: 'Weekend Warrior',
+    description: 'Log in every weekend for a month',
+    icon: '🎮',
+    points: 500,
+    category: 'streak',
+    criteria: { type: 'streak', condition: 'weekly_weekend', threshold: 4 }
+  },
+
+  // Engagement Frequency
+  {
+    id: 'daily_visits_3',
+    name: 'Triple Dipper',
+    description: 'Visit 3 times in one day',
+    icon: '🎲',
+    points: 100,
+    category: 'engagement',
+    criteria: { type: 'count', condition: 'login', threshold: 3, timeframe: 'daily' }
+  },
+  {
+    id: 'daily_visits_5',
+    name: 'High Five',
+    description: 'Visit 5 times in one day',
+    icon: '✋',
+    points: 200,
+    category: 'engagement',
+    criteria: { type: 'count', condition: 'login', threshold: 5, timeframe: 'daily' }
+  },
+  {
+    id: 'weekly_visits_20',
+    name: 'Weekly Wonder',
+    description: 'Visit 20 times in one week',
+    icon: '⭐',
+    points: 400,
+    category: 'engagement',
+    criteria: { type: 'count', condition: 'login', threshold: 20, timeframe: 'weekly' }
+  },
+  {
+    id: 'active_hours_5',
+    name: 'Time Well Spent',
+    description: 'Spend 5 hours actively using the app',
+    icon: '⌛',
+    points: 300,
+    category: 'engagement',
+    criteria: { type: 'count', condition: 'active_time', threshold: 5, timeframe: 'all_time' }
+  },
+  {
+    id: 'night_owl',
+    name: 'Night Owl',
+    description: 'Log in after midnight 5 times',
+    icon: '🦉',
+    points: 250,
+    category: 'engagement',
+    criteria: { type: 'count', condition: 'night_login', threshold: 5, timeframe: 'all_time' }
+  },
+  {
+    id: 'early_bird',
+    name: 'Early Bird',
+    description: 'Log in before 7 AM 5 times',
+    icon: '🌅',
+    points: 250,
+    category: 'engagement',
+    criteria: { type: 'count', condition: 'morning_login', threshold: 5, timeframe: 'all_time' }
+  },
+
+  // Milestones
+  {
+    id: 'visits_100',
+    name: 'Century Club',
+    description: 'Visit the app 100 times total',
+    icon: '💯',
+    points: 500,
+    category: 'milestone',
+    criteria: { type: 'milestone', condition: 'login', threshold: 100 }
+  },
+  {
+    id: 'visits_500',
+    name: 'Dedicated Fan',
+    description: 'Visit the app 500 times total',
+    icon: '🌟',
+    points: 1500,
+    category: 'milestone',
+    criteria: { type: 'milestone', condition: 'login', threshold: 500 }
+  },
+  {
+    id: 'visits_1000',
+    name: 'True Devotee',
+    description: 'Visit the app 1,000 times total',
+    icon: '👑',
+    points: 3000,
+    category: 'milestone',
+    criteria: { type: 'milestone', condition: 'login', threshold: 1000 }
+  },
+  {
+    id: 'level_5',
+    name: 'Rising Star',
+    description: 'Reach level 5',
+    icon: '⚡',
+    points: 500,
+    category: 'milestone',
+    criteria: { type: 'milestone', condition: 'level', threshold: 5 }
+  },
+  {
+    id: 'level_10',
+    name: 'Power Player',
+    description: 'Reach level 10',
+    icon: '💫',
+    points: 1000,
+    category: 'milestone',
+    criteria: { type: 'milestone', condition: 'level', threshold: 10 }
+  },
+  {
+    id: 'level_20',
+    name: 'Elite Status',
+    description: 'Reach level 20',
+    icon: '🎭',
+    points: 2000,
+    category: 'milestone',
+    criteria: { type: 'milestone', condition: 'level', threshold: 20 }
+  },
+
+  // Social Achievements
+  {
+    id: 'first_message',
+    name: 'Ice Breaker',
+    description: 'Send your first message',
+    icon: '💬',
+    points: 100,
+    category: 'social',
+    criteria: { type: 'milestone', condition: 'first_message' }
+  },
+  {
+    id: 'messages_100',
+    name: 'Chatty Cathy',
+    description: 'Send 100 messages',
+    icon: '📨',
+    points: 300,
+    category: 'social',
+    criteria: { type: 'milestone', condition: 'messages', threshold: 100 }
+  },
+  {
+    id: 'messages_1000',
+    name: 'Message Master',
+    description: 'Send 1,000 messages',
+    icon: '📬',
+    points: 1000,
+    category: 'social',
+    criteria: { type: 'milestone', condition: 'messages', threshold: 1000 }
+  },
+  {
+    id: 'first_match',
+    name: 'Perfect Match',
+    description: 'Get your first connection match',
+    icon: '🤝',
+    points: 200,
+    category: 'social',
+    criteria: { type: 'milestone', condition: 'first_match' }
+  },
+  {
+    id: 'matches_5',
+    name: 'Social Butterfly',
+    description: 'Connect with 5 different people',
+    icon: '🦋',
+    points: 500,
+    category: 'social',
+    criteria: { type: 'milestone', condition: 'matches', threshold: 5 }
+  },
+  {
+    id: 'matches_20',
+    name: 'Networking Pro',
+    description: 'Connect with 20 different people',
+    icon: '🌐',
+    points: 1000,
+    category: 'social',
+    criteria: { type: 'milestone', condition: 'matches', threshold: 20 }
+  },
+  {
+    id: 'conversation_starter',
+    name: 'Conversation Starter',
+    description: 'Start 10 conversations in one day',
+    icon: '🗣️',
+    points: 300,
+    category: 'social',
+    criteria: { type: 'count', condition: 'conversations_started', threshold: 10, timeframe: 'daily' }
+  },
+  {
+    id: 'quick_responder',
+    name: 'Quick Draw',
+    description: 'Respond to 5 messages within 5 minutes',
+    icon: '⚡',
+    points: 250,
+    category: 'social',
+    criteria: { type: 'count', condition: 'quick_responses', threshold: 5, timeframe: 'all_time' }
+  },
+  {
+    id: 'conversation_marathon',
+    name: 'Marathon Runner',
+    description: 'Maintain a conversation for over an hour',
+    icon: '🏃',
+    points: 400,
+    category: 'social',
+    criteria: { type: 'milestone', condition: 'long_conversation', threshold: 60 }
+  }
+] as const;
