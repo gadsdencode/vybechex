@@ -82,7 +82,7 @@ export function calculateInterestScore(
   let matchCount = 0;
 
   // Calculate score for matching interests
-  for (const [name, interest1] of map1) {
+  map1.forEach((interest1, name) => {
     const interest2 = map2.get(name);
     if (interest2) {
       // Score based on how close their interest levels are (0-1)
@@ -90,7 +90,7 @@ export function calculateInterestScore(
       totalScore += scoreAlignment;
       matchCount++;
     }
-  }
+  });
 
   // Calculate shared interest ratio
   const sharedRatio = matchCount / Math.max(interests1.length, interests2.length);

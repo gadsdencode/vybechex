@@ -7,7 +7,7 @@ if (!process.env.STRIPE_SECRET_KEY) {
 }
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: '2023-10-16'
+  apiVersion: '2024-12-18.acacia'
 });
 
 const SUBSCRIPTION_PRICE_ID = process.env.STRIPE_PRICE_ID;
@@ -52,8 +52,10 @@ router.post('/create-subscription', validateUser, async (req, res) => {
 
 router.get('/subscription-status', validateUser, async (req, res) => {
   try {
+    const customerId = req.user?.stripeCustomerId || undefined;
+    
     const subscriptions = await stripe.subscriptions.list({
-      customer: req.user.stripeCustomerId,
+      customer: customerId,
       status: 'active',
       limit: 1,
     });

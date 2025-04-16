@@ -63,7 +63,7 @@ export const MatchCard: FC<MatchCardProps> = ({
 
     try {
       setIsConnecting(true);
-      await connect({ id: userData.id.toString() });
+      await connect(userData.id);
       
       toast({
         title: "Connection Request Sent!",

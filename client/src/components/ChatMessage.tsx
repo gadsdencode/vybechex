@@ -31,7 +31,7 @@ export function ChatMessage({ message, currentUser, className }: ChatMessageProp
         <div className="space-y-1">
           <p className="text-sm break-words">{message.content}</p>
           <p className="text-xs opacity-70">
-            {format(new Date(message.createdAt), "HH:mm")}
+            {message.createdAt ? format(new Date(message.createdAt), "HH:mm") : ""}
           </p>
         </div>
       </Card>

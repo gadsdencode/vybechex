@@ -76,6 +76,7 @@ export const users = pgTable("users", {
   level: integer("level").default(1).notNull(),
   xp: integer("xp").default(0).notNull(),
   lastRewardClaimed: timestamp("last_reward_claimed"),
+  stripeCustomerId: text("stripe_customer_id"),
 });
 
 // Add relations for achievements and profile progress
