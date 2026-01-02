@@ -2,7 +2,8 @@ import passport from "passport";
 import { IVerifyOptions, Strategy as LocalStrategy } from "passport-local";
 import { type Express, Request, Response, NextFunction } from "express";
 import session from "express-session";
-import createMemoryStore from "memorystore";
+import pgSession from "connect-pg-simple";
+import { Pool } from "pg";
 import { scrypt, randomBytes, timingSafeEqual } from "crypto";
 import { promisify } from "util";
 import { users, matches, insertUserSchema, type SelectUser } from "@db/schema";
@@ -71,27 +72,11 @@ declare module 'express-session' {
   }
 }
 
-// Rate limiting for match requests
-const matchRequestLimits = new Map<number, { count: number; resetTime: number }>();
-const MAX_REQUESTS_PER_HOUR = 20;
-const HOUR_IN_MS = 3600000;
+// PostgreSQL-based rate limiting (imported from utility)
+import { checkMatchRequestLimit, rateLimiter } from './utils/rateLimiter';
 
-const checkMatchRequestLimit = (userId: number): boolean => {
-  const now = Date.now();
-  const userLimit = matchRequestLimits.get(userId);
-
-  if (!userLimit || now > userLimit.resetTime) {
-    matchRequestLimits.set(userId, { count: 1, resetTime: now + HOUR_IN_MS });
-    return true;
-  }
-
-  if (userLimit.count >= MAX_REQUESTS_PER_HOUR) {
-    return false;
-  }
-
-  userLimit.count++;
-  return true;
-};
+// Re-export for use in other modules
+export { checkMatchRequestLimit };
 
 export const verifyMatchAccess = async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -167,6 +152,30 @@ export const verifyMatchAccess = async (req: Request, res: Response, next: NextF
   }
 };
 
+/**
+ * Get session secret with production safety check.
+ * In production, requires SESSION_SECRET env var to be set.
+ * Falls back to REPL_ID for Replit deployments.
+ */
+function getSessionSecret(): string {
+  const secret = process.env.SESSION_SECRET || process.env.REPL_ID;
+  
+  if (!secret && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'SESSION_SECRET environment variable is required in production. ' +
+      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
+    );
+  }
+  
+  // Only use dev fallback in development
+  if (!secret) {
+    console.warn('⚠️  Using development session secret. Do NOT use in production!');
+    return 'dev-only-insecure-fallback-secret-change-in-production';
+  }
+  
+  return secret;
+}
+
 export async function setupAuth(app: Express) {
   if (!process.env.DATABASE_URL) {
     throw new Error("DATABASE_URL must be set for auth to work");
@@ -183,22 +192,28 @@ export async function setupAuth(app: Express) {
     throw new Error("Failed to connect to database");
   }
 
-  const MemoryStore = createMemoryStore(session);
-  const sessionStore = new MemoryStore({
-    checkPeriod: 86400000, // 24 hours
-    ttl: 604800000, // 7 days
-    noDisposeOnSet: true, // Prevent disposal on session updates
-    dispose: (key: string, sess: session.SessionData) => {
-      // Only log in development and only for actual expirations
-      if (process.env.NODE_ENV === 'development' && !sess.cookie?.expires) {
-        console.debug(`Session ${key} expired naturally`);
-      }
-    }
+  // Create PostgreSQL connection pool for sessions
+  const pgPool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : undefined
   });
 
+  // Initialize PostgreSQL session store
+  const PgStore = pgSession(session);
+  const sessionStore = new PgStore({
+    pool: pgPool,
+    tableName: 'user_sessions',
+    createTableIfMissing: true,
+    pruneSessionInterval: 60 * 15, // Prune expired sessions every 15 minutes
+    errorLog: console.error.bind(console)
+  });
+
+  // Get session secret with production safety
+  const sessionSecret = getSessionSecret();
+
   const sessionSettings: session.SessionOptions = {
-    secret: process.env.REPL_ID || "porygon-supremacy",
-    resave: true, // Enable session updates
+    secret: sessionSecret,
+    resave: false, // PostgreSQL store handles this properly
     saveUninitialized: false,
     rolling: true, // Reset expiration on each request
     cookie: {
@@ -210,7 +225,7 @@ export async function setupAuth(app: Express) {
     },
     store: sessionStore,
     name: 'sid',
-    proxy: app.get("env") === "production" // Trust proxy in production
+    proxy: app.get("env") === "production"
   };
 
   if (app.get("env") === "production") {
@@ -226,8 +241,10 @@ export async function setupAuth(app: Express) {
 
   // Cleanup handler for graceful shutdown
   process.on('SIGTERM', () => {
-    sessionStore.stopInterval();
+    pgPool.end();
   });
+
+  console.log('PostgreSQL session store initialized');
 
   // Serialize the entire user object
   passport.serializeUser((user: Express.User, done) => {

@@ -1,4 +1,23 @@
-import { PersonalityTraits, Interest } from "@/hooks/use-matches";
+// server/utils/matching.ts
+// Matching and compatibility scoring algorithms
+
+// Define types locally for server-side use (no client dependencies)
+export interface PersonalityTraits {
+  extraversion: number;
+  communication: number;
+  openness: number;
+  values: number;
+  planning: number;
+  sociability: number;
+  [key: string]: number; // Allow dynamic access
+}
+
+export interface Interest {
+  id: number;
+  name: string;
+  score: number;
+  category?: string;
+}
 
 interface ScoreWeights {
   personality: number;
@@ -24,7 +43,57 @@ const TRAIT_WEIGHTS = {
   values: 0.20,
   planning: 0.10,
   sociability: 0.10
-};
+} as const;
+
+type TraitName = keyof typeof TRAIT_WEIGHTS;
+
+/**
+ * Simple compatibility score calculation based on personality traits.
+ * Returns a value between 0 and 1 representing similarity.
+ * 
+ * @param userTraits - First user's personality traits
+ * @param matchTraits - Second user's personality traits
+ * @returns Compatibility score between 0 and 1
+ */
+export function calculateCompatibilityScore(
+  userTraits: Partial<PersonalityTraits>,
+  matchTraits: Partial<PersonalityTraits>
+): number {
+  const requiredTraits: TraitName[] = [
+    'extraversion',
+    'communication',
+    'openness',
+    'values',
+    'planning',
+    'sociability'
+  ];
+
+  let score = 0;
+  let count = 0;
+
+  for (const trait of requiredTraits) {
+    const userValue = userTraits[trait];
+    const matchValue = matchTraits[trait];
+
+    // Skip if either value is missing or invalid
+    if (typeof userValue !== 'number' || typeof matchValue !== 'number' ||
+        isNaN(userValue) || isNaN(matchValue)) {
+      continue;
+    }
+
+    // Normalize values to be between 0 and 1
+    const normalizedUser = Math.max(0, Math.min(1, userValue));
+    const normalizedMatch = Math.max(0, Math.min(1, matchValue));
+
+    // Calculate similarity (1 - absolute difference)
+    const similarity = 1 - Math.abs(normalizedUser - normalizedMatch);
+    score += similarity;
+    count++;
+  }
+
+  // Return average similarity score, defaulting to 0 if no valid traits
+  return count > 0 ? score / count : 0;
+}
 
 export function calculateTraitCompatibility(
   trait1: number,
